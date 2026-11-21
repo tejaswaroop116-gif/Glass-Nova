@@ -1,0 +1,14 @@
+google-genai
+sounddevice
+numpy
+python-dotenv
+psutil
+pyautogui
+Pillow
+PySide6
+pycaw
+comtypes
+vosk
+pypdf
+opencv-python
+mediapipe

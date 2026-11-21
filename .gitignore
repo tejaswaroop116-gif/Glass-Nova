@@ -1,0 +1,22 @@
+# Secrets & environment
+.env
+.env.*
+!.env.example
+
+# Python virtual environments & caches
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.hand_dnn_cache/
+
+# Legacy backups & scratch files
+*.bak
+* - Copy.py
+backup_pre_updates_1_2/
+_backup_pre_nus/
+def print_board(board).txt
+requirements(2).txt
+tc_tac_toe.py
