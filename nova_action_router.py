@@ -258,3 +258,75 @@ class ApprovedActionBroker:
             return {"ok": True, "verified": verified, "result": result}
         except Exception as exc:
             return {"ok": False, "verified": False, "error": str(exc)}
+
+
+def match_offline_command(user_text: str) -> dict[str, Any] | None:
+    """Deterministic local intent matcher for common system commands when offline or Gemini Live is unavailable.
+    Returns a structured action dict {'action': ..., 'arguments': ..., 'description': ...} or None."""
+    import re
+    clean = " ".join((user_text or "").strip().lower().split())
+    if not clean:
+        return None
+
+    # Open common apps
+    for app_key, aliases in (
+        ("calculator", ("open calculator", "launch calculator", "start calculator", "open calc")),
+        ("notepad", ("open notepad", "launch notepad", "start notepad")),
+        ("explorer", ("open file explorer", "open explorer", "launch explorer")),
+        ("cmd", ("open command prompt", "open terminal", "open cmd")),
+        ("settings", ("open windows settings", "open system settings")),
+        ("taskmgr", ("open task manager", "launch task manager")),
+    ):
+        if any(a in clean for a in aliases):
+            return {
+                "action": "open_app",
+                "arguments": {"name": app_key},
+                "description": f"Open {app_key} (offline local command)",
+            }
+
+    # Open common folders
+    for folder_key in ("downloads", "documents", "desktop", "pictures", "music", "videos"):
+        if f"open {folder_key}" in clean or f"show {folder_key}" in clean:
+            return {
+                "action": "open_folder",
+                "arguments": {"path": folder_key},
+                "description": f"Open {folder_key} folder (offline local command)",
+            }
+
+    # Volume controls
+    if any(p in clean for p in ("mute volume", "mute audio", "mute sound")) or clean == "mute":
+        return {"action": "volume_control", "arguments": {"action": "mute"}, "description": "Mute system audio"}
+    if any(p in clean for p in ("unmute volume", "unmute audio", "unmute sound")) or clean == "unmute":
+        return {"action": "volume_control", "arguments": {"action": "unmute"}, "description": "Unmute system audio"}
+    m_vol = re.search(r"volume\s+(?:to\s+)?(\d{1,3})\s*%?", clean)
+    if m_vol and any(w in clean for w in ("set", "volume", "change")):
+        lvl = max(0, min(100, int(m_vol.group(1))))
+        return {"action": "volume_control", "arguments": {"action": "set", "level": lvl}, "description": f"Set volume to {lvl}%"}
+    if any(p in clean for p in ("volume up", "increase volume", "turn up volume", "louder")):
+        return {"action": "volume_control", "arguments": {"action": "up", "amount": 10}, "description": "Increase volume"}
+    if any(p in clean for p in ("volume down", "decrease volume", "turn down volume", "quieter", "lower volume")):
+        return {"action": "volume_control", "arguments": {"action": "down", "amount": 10}, "description": "Decrease volume"}
+
+    # Brightness controls
+    m_bri = re.search(r"brightness\s+(?:to\s+)?(\d{1,3})\s*%?", clean)
+    if m_bri:
+        lvl = max(0, min(100, int(m_bri.group(1))))
+        return {"action": "brightness_control", "arguments": {"action": "set", "level": lvl}, "description": f"Set brightness to {lvl}%"}
+    if any(p in clean for p in ("brightness up", "increase brightness", "brighter")):
+        return {"action": "brightness_control", "arguments": {"action": "up", "amount": 10}, "description": "Increase brightness"}
+    if any(p in clean for p in ("brightness down", "decrease brightness", "dimmer", "lower brightness")):
+        return {"action": "brightness_control", "arguments": {"action": "down", "amount": 10}, "description": "Decrease brightness"}
+
+    # Screenshot & system status
+    if any(p in clean for p in ("take screenshot", "take a screenshot", "capture screenshot")):
+        return {"action": "take_screenshot", "arguments": {}, "description": "Take a desktop screenshot"}
+    if any(p in clean for p in ("system status", "battery status", "cpu usage", "check system status")):
+        return {"action": "system_status", "arguments": {}, "description": "Check system CPU, RAM, disk, and battery status"}
+
+    # Hand gesture mouse control
+    if any(p in clean for p in ("start hand gesture", "enable hand gesture", "turn on hand gesture")):
+        return {"action": "hand_gesture_control", "arguments": {"action": "start"}, "description": "Start hand gesture mouse control"}
+    if any(p in clean for p in ("stop hand gesture", "disable hand gesture", "turn off hand gesture")):
+        return {"action": "hand_gesture_control", "arguments": {"action": "stop"}, "description": "Stop hand gesture mouse control"}
+
+    return None

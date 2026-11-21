@@ -365,6 +365,39 @@ class ActionRouterAndBrokerTests(unittest.TestCase):
         self.assertEqual(len(dlg.steps), 1)
         dlg.close()
 
+    def test_offline_local_fallback_and_modular_ui_imports(self):
+        from nova_action_router import match_offline_command
+        import bot
+        import ui_dialogs
+        import ui
+
+        # 1. Verify DesktopBot is shared between bot.py and ui.py (no duplicate class definition)
+        self.assertIs(ui.DesktopBot, bot.DesktopBot)
+        self.assertIs(ui.WorkflowEditorDialog, ui_dialogs.WorkflowEditorDialog)
+        self.assertIs(ui.WalkthroughHighlightOverlay, ui_dialogs.WalkthroughHighlightOverlay)
+
+        # 2. Verify deterministic offline local command matching
+        c1 = match_offline_command("please open calculator")
+        self.assertIsNotNone(c1)
+        self.assertEqual(c1["action"], "open_app")
+        self.assertEqual(c1["arguments"], {"name": "calculator"})
+
+        c2 = match_offline_command("open downloads")
+        self.assertEqual(c2["action"], "open_folder")
+        self.assertEqual(c2["arguments"], {"path": "downloads"})
+
+        c3 = match_offline_command("set volume to 45%")
+        self.assertEqual(c3["action"], "volume_control")
+        self.assertEqual(c3["arguments"], {"action": "set", "level": 45})
+
+        c4 = match_offline_command("take a screenshot")
+        self.assertEqual(c4["action"], "take_screenshot")
+
+        c5 = match_offline_command("check system status")
+        self.assertEqual(c5["action"], "system_status")
+
+        self.assertIsNone(match_offline_command("explain quantum computing in simple terms"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -51,7 +51,7 @@ from desktop_agent import (
 )
 from hand_gesture import gesture_manager
 from media_ducking import ducker
-from nova_action_router import NovaActionRouter, ApprovedActionBroker, validate_proposed_action, ACTION_SCHEMAS
+from nova_action_router import NovaActionRouter, ApprovedActionBroker, validate_proposed_action, ACTION_SCHEMAS, match_offline_command
 from nova_walkthrough import Walkthrough, WalkthroughStep, walkthrough_from_plan
 from nova_workflows import (
     Workflow,
@@ -1906,8 +1906,18 @@ class LiveManager:
                     emit("log", text=f"[chat] send failed: {type(e).__name__}: {e}")
                     await asyncio.sleep(0.3)
             if not sent:
-                self.set_state(self._rest_state())
-                emit("error", text="Your message could not be delivered because Gemini Live is not connected. Check your internet connection and API key, then send it again.")
+                offline_act = match_offline_command(text)
+                if offline_act is not None:
+                    self.set_state("executing")
+                    b_res = await asyncio.to_thread(live_action_broker.execute, offline_act)
+                    raw_out = b_res.get("result") if b_res.get("ok") else b_res
+                    msg = (raw_out.get("message") if isinstance(raw_out, dict) else str(raw_out or "")) or "Offline command executed."
+                    emit("model", text=f"[Offline Local Fallback] {msg}")
+                    emit("turn_end")
+                    self.set_state(self._rest_state())
+                else:
+                    self.set_state(self._rest_state())
+                    emit("error", text="Your message could not be delivered because Gemini Live is not connected. Check your internet connection and API key, then send it again.")
 
     async def mic_start(self):
         if self.mic_task is not None and not self.mic_task.done():
