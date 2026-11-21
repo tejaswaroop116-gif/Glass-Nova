@@ -4,7 +4,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QProcess, QProcessEnvironment, QTimer, QSettings, QPointF, QRectF, QPoint, QEvent, Signal, QObject, QThread, QPropertyAnimation, QVariantAnimation, QEasingCurve, QAbstractAnimation
 from PySide6.QtGui import QColor as C, QPainter, QPen, QBrush, QRadialGradient, QLinearGradient, QPainterPath, QCursor, QGuiApplication, QIcon, QPixmap, QShortcut, QKeySequence
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-                               QGridLayout, QStackedWidget, QTextEdit, QLineEdit, QMessageBox, QInputDialog, QSlider, QSizeGrip, QMenu, QSystemTrayIcon, QDialog, QListWidget, QListWidgetItem)
+                               QGridLayout, QStackedWidget, QTextEdit, QLineEdit, QMessageBox, QInputDialog, QSlider, QSizeGrip, QMenu, QSystemTrayIcon, QDialog, QListWidget, QListWidgetItem, QScrollArea)
 from permissions import CATEGORIES, PermissionManager
 from wake_word import WakeWordListener
 from nova_companion_bridge import CompanionBridge
@@ -17,18 +17,23 @@ APP_NAME = 'Nova'   # change the app name here
 BOT_NAMES = {'mechanical': 'Original NOVA Robot', 'ghost': 'Ghost', 'mummy': 'Mummy', 'pet': 'NOVA Painter Pet', 'cloudy': 'Cloudy'}   # companion choices
 STYLE = """
 QWidget{color:#f1fbff;font-family:'Segoe UI';font-size:10pt;background:transparent}
-QFrame#panel{background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 rgba(110,205,240,52),stop:.45 rgba(36,122,170,58),stop:1 rgba(8,44,80,74));border:1px solid rgba(93,210,255,150);border-radius:22px}
-QFrame#sidebar{background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 rgba(40,130,175,78),stop:.5 rgba(8,52,90,88),stop:1 rgba(5,26,50,104));border:1px solid rgba(93,210,255,150);border-radius:22px}
+QFrame#panel{background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 rgba(16,44,74,220),stop:.5 rgba(10,30,54,228),stop:1 rgba(6,19,37,236));border:1px solid rgba(93,210,255,155);border-radius:22px}
+QFrame#sidebar{background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 rgba(14,48,80,224),stop:.5 rgba(9,32,58,232),stop:1 rgba(5,20,38,240));border:1px solid rgba(93,210,255,155);border-radius:22px}
+QScrollArea{background:transparent;border:none}
+QScrollBar:vertical{background:rgba(6,22,40,120);width:9px;margin:4px 2px 4px 2px;border-radius:4px}
+QScrollBar::handle:vertical{background:rgba(70,195,245,165);min-height:26px;border-radius:4px}
+QScrollBar::handle:vertical:hover{background:#5efaff}
+QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0px}
 QLabel#muted{color:#c8e6f5} QLabel#heading{font-size:21pt;font-weight:650} QLabel#brand{font-size:17pt;font-weight:700;color:#a5f1ff}
-QPushButton{background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 rgba(66,148,192,105),stop:1 rgba(15,53,86,120));border:1px solid rgba(110,210,248,130);border-radius:12px;padding:10px 14px;text-align:left}
-QPushButton:hover{background:rgba(32,135,180,145);border-color:#39c6ff} QPushButton:disabled{color:rgba(241,251,255,120)}
-QPushButton#primary{background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 rgba(32,169,232,225),stop:1 rgba(23,85,165,232));border:1px solid #a0efff;font-weight:700}
-QPushButton#nav{background:transparent;border:1px solid transparent;padding:12px} QPushButton#nav:hover{background:rgba(34,137,192,36)}
+QPushButton{background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 rgba(42,108,152,190),stop:1 rgba(14,48,80,210));border:1px solid rgba(110,210,248,145);border-radius:12px;padding:8px 14px;text-align:left}
+QPushButton:hover{background:rgba(32,135,180,215);border-color:#39c6ff} QPushButton:disabled{color:rgba(241,251,255,120)}
+QPushButton#primary{background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 rgba(32,169,232,235),stop:1 rgba(23,85,165,240));border:1px solid #a0efff;font-weight:700}
+QPushButton#nav{background:transparent;border:1px solid transparent;padding:12px} QPushButton#nav:hover{background:rgba(34,137,192,45)}
 QPushButton#nav:checked{background:transparent;border:1px solid transparent;color:#ffffff}
-QPushButton#ctl{background:rgba(35,115,160,65);border:1px solid rgba(100,220,255,100);border-radius:8px;padding:0;text-align:center;font-size:12pt}
-QPushButton#ctl:hover{background:rgba(40,165,220,150)}
-QTextEdit,QLineEdit{background:rgba(6,22,42,205);border:1px solid rgba(81,190,238,135);border-radius:14px;padding:10px;selection-background-color:#176fa4}
-QSlider::groove:horizontal{height:6px;background:rgba(255,255,255,48);border-radius:3px} QSlider::sub-page:horizontal{background:#39c6ff;border-radius:3px}
+QPushButton#ctl{background:rgba(35,115,160,140);border:1px solid rgba(100,220,255,120);border-radius:8px;padding:0;text-align:center;font-size:12pt}
+QPushButton#ctl:hover{background:rgba(40,165,220,200)}
+QTextEdit,QLineEdit{background:rgba(4,18,34,210);border:1px solid rgba(81,190,238,150);border-radius:14px;padding:8px 10px;selection-background-color:#176fa4}
+QSlider::groove:horizontal{height:6px;background:rgba(255,255,255,55);border-radius:3px} QSlider::sub-page:horizontal{background:#39c6ff;border-radius:3px}
 QSlider::handle:horizontal{background:#a5f1ff;width:16px;margin:-6px 0;border-radius:8px;border:1px solid white}"""
 MENU_CSS = ("QMenu{background:#0c2038;color:#eaf8ff;border:1px solid #3fb8f0;padding:6px;font-family:'Segoe UI';font-size:10pt}"
             "QMenu::item{padding:7px 22px;border-radius:6px} QMenu::item:selected{background:#1f6f9f}QMenu::separator{height:1px;background:#2c5878;margin:5px 8px}")
@@ -57,18 +62,25 @@ def hl(p, x, y, rx, ry, a=170, ang=0, col=(255, 255, 255)):
 
 
 class GlassRoot(QWidget):
-    """Semi-transparent glass painted over a fully transparent window."""
-    inset, radius, tint = 14, 26, 64
-    def set_tint(self, v): self.tint = cl(int(v), 6, 200); self.update()
+    """Controlled dark-glass root backdrop with proper surface opacity isolation so desktop windows never bleed into UI text."""
+    inset, radius, tint = 14, 26, 224
+    def set_tint(self, v): self.tint = cl(int(v), 145, 252); self.update()
     def set_flat(self, flat, radius=0): self.inset, self.radius = (0, radius) if flat else (14, 26); self.update()
     def paintEvent(self, _):
         p = QPainter(self); p.setRenderHint(QPainter.Antialiasing); i, r, t = self.inset, self.radius, self.tint
         b = QRectF(self.rect()).adjusted(i, i, -i, -i)
         for k in range(i, 0, -1):
-            st(p, None, (57, 198, 255, int(34 * (1 - k / (i + 1)) ** 2)), 1.6); p.drawRoundedRect(b.adjusted(-k, -k, k, k), r + k, r + k)
-        st(p, lgrad(b.left(), b.top(), b.right(), b.bottom(), (0, (80, 175, 230, int(t * .75))), (.5, (12, 52, 98, t)), (1, (4, 20, 48, min(255, int(t * 1.2))))))
+            st(p, None, (57, 198, 255, int(38 * (1 - k / (i + 1)) ** 2)), 1.6); p.drawRoundedRect(b.adjusted(-k, -k, k, k), r + k, r + k)
+        # Controlled deep navy-cyan glass fill that isolates UI panels from desktop clutter
+        top_a = cl(int(t * 0.94), 135, 248)
+        mid_a = cl(int(t * 0.98), 150, 252)
+        bot_a = cl(int(t * 1.03), 165, 255)
+        st(p, lgrad(b.left(), b.top(), b.right(), b.bottom(),
+                    (0, (14, 42, 74, top_a)),
+                    (.5, (8, 26, 50, mid_a)),
+                    (1, (4, 15, 32, bot_a))))
         p.drawRoundedRect(b, r, r)
-        st(p, None, (150, 235, 255, 165), 1.2); p.drawRoundedRect(b.adjusted(.6, .6, -.6, -.6), r, r)
+        st(p, None, (140, 230, 255, 185), 1.3); p.drawRoundedRect(b.adjusted(.6, .6, -.6, -.6), r, r)
 
 
 class NavPill(QWidget):
@@ -1133,9 +1145,9 @@ class Nova(QMainWindow):
     def __init__(self):
         super().__init__(None, Qt.Window | Qt.FramelessWindowHint); self.setWindowTitle(f'{APP_NAME} — Personal AI'); self.resize(1240, 800); self.setMinimumSize(980, 650)
         self.setAttribute(Qt.WA_TranslucentBackground); self.setAttribute(Qt.WA_NoSystemBackground); self.setAutoFillBackground(False)
-        self.settings = QSettings('Nova', 'Nova'); self.glass_mode = 'frost' if str(self.settings.value('glass_mode', 'clear')) == 'frost' else 'clear'
-        try: self.tint = int(self.settings.value('tint', 64))
-        except (TypeError, ValueError): self.tint = 64
+        self.settings = QSettings('Nova', 'Nova'); self.glass_mode = 'clear' if str(self.settings.value('glass_mode', 'frost')) == 'clear' else 'frost'
+        try: self.tint = cl(int(self.settings.value('tint', 224)), 145, 252)
+        except (TypeError, ValueError): self.tint = 224
         self.wake_enabled = str(self.settings.value('wake_enabled', 'true')).lower() != 'false'
         self.minimize_to_tray = str(self.settings.value('minimize_to_tray', 'true')).lower() != 'false'
         try: self.mic_sensitivity = max(0, min(100, int(self.settings.value('mic_sensitivity', 68))))
@@ -1280,13 +1292,14 @@ class Nova(QMainWindow):
     def button(self, text, fn, name=None):
         b = QPushButton(text); b.clicked.connect(fn)
         if name: b.setObjectName(name)
+        if name != 'ctl': b.setMinimumHeight(34)
         return b
     def textbox(self, ph):
         t = QTextEdit(); t.setReadOnly(True); t.setPlaceholderText(ph); return t
     def panel(self, title, desc=None):
-        f = QFrame(); f.setObjectName('panel'); v = QVBoxLayout(f); v.setContentsMargins(18, 18, 18, 18); v.setSpacing(10)
+        f = QFrame(); f.setObjectName('panel'); v = QVBoxLayout(f); v.setContentsMargins(18, 16, 18, 16); v.setSpacing(8)
         h = QLabel(title); h.setStyleSheet('font-size:13pt;font-weight:650'); v.addWidget(h)
-        if desc: d = QLabel(desc); d.setObjectName('muted'); d.setWordWrap(True); v.addWidget(d)
+        if desc: d = QLabel(desc); d.setObjectName('muted'); d.setWordWrap(True); d.setMinimumWidth(120); v.addWidget(d)
         return f, v
     def _create_mic_sensitivity_widget(self):
         w = MicSensitivityWidget(self.mic_sensitivity, self.mic_auto_nearest, self)
@@ -1445,9 +1458,10 @@ class Nova(QMainWindow):
             tools.memory_control(action='clear', confirm=True)
             self._refresh_tasks_and_memory()
     def _tools(self):
-        w = QWidget(); v = QVBoxLayout(w); v.setSpacing(12); grid = QGridLayout()
+        w = QWidget(); v = QVBoxLayout(w); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(10)
+        grid = QGridLayout(); grid.setHorizontalSpacing(10); grid.setVerticalSpacing(7)
         for i, (label, kind) in enumerate((('🎯 Point at Screen', 'point_screen'), ('🖐 Toggle Hand Gesture Mouse', 'gesture'), ('Open Calculator', 'calc'), ('Open Notepad', 'notepad'), ('Open File Explorer', 'explorer'), ('Open Downloads', 'downloads'), ('Search Web', 'web'), ('System Status', 'status'))):
-            b = self.button(label, lambda _=False, k=kind: self.quick_action(k)); b.setMinimumHeight(44); grid.addWidget(b, i // 2, i % 2)
+            b = self.button(label, lambda _=False, k=kind: self.quick_action(k)); grid.addWidget(b, i // 2, i % 2)
         p, pv = self.panel('Computer tools & Point at Screen', 'Quick actions run only when clicked. Point at Screen captures only your user-selected rectangle after permission approval.'); pv.addLayout(grid)
         pt_row = QHBoxLayout()
         self.point_question_input = QLineEdit()
@@ -1457,11 +1471,12 @@ class Nova(QMainWindow):
         pt_row.addWidget(self.button('🎯  Select Region & Explain', self.start_screen_pointing_ui, 'primary'))
         pv.addLayout(pt_row)
         self.point_result_view = self.textbox('Point at Screen explanation will appear here. Guidance only — Nova never clicks or types during screen pointing.')
-        self.point_result_view.setMaximumHeight(92)
+        self.point_result_view.setMinimumHeight(46)
+        self.point_result_view.setMaximumHeight(64)
         pv.addWidget(self.point_result_view)
         v.addWidget(p)
 
-        bottom_row = QHBoxLayout(); bottom_row.setSpacing(12)
+        bottom_row = QHBoxLayout(); bottom_row.setSpacing(10)
 
         # Guided Walkthroughs compact panel
         wt_p, wt_v = self.panel('Guided Walkthroughs', 'Step-by-step visual guidance (Next / Back / Pause / Stop). Nova highlights UI targets without clicking or typing.')
@@ -1473,7 +1488,8 @@ class Nova(QMainWindow):
         wt_top.addWidget(self.button('▶  Guide Me', self._ui_start_walkthrough, 'primary'))
         wt_v.addLayout(wt_top)
         self.walkthrough_view = self.textbox('No active walkthrough. Enter a topic above or ask Nova "show me how to do this".')
-        self.walkthrough_view.setMaximumHeight(110)
+        self.walkthrough_view.setMinimumHeight(54)
+        self.walkthrough_view.setMaximumHeight(82)
         wt_v.addWidget(self.walkthrough_view)
         wt_btns = QHBoxLayout()
         wt_btns.addWidget(self.button('◀  Back', lambda: self._ui_walkthrough_nav('back')))
@@ -1486,7 +1502,8 @@ class Nova(QMainWindow):
         # Reusable Semantic Workflows compact panel
         wf_p, wf_v = self.panel('Reusable Workflows', 'Record approved semantic actions (no raw keys or secrets). Review, edit, delete, or replay with per-step approval.')
         self.workflow_view = self.textbox('No saved workflows yet. Start recording or refresh.')
-        self.workflow_view.setMaximumHeight(115)
+        self.workflow_view.setMinimumHeight(54)
+        self.workflow_view.setMaximumHeight(82)
         wf_v.addWidget(self.workflow_view)
         wf_btns1 = QHBoxLayout()
         self.wf_rec_btn = self.button('●  Start Recording', self._ui_toggle_workflow_recording, 'primary')
@@ -1504,8 +1521,13 @@ class Nova(QMainWindow):
         v.addLayout(bottom_row, 1)
         QTimer.singleShot(250, self._ui_refresh_workflows)
         return w
+
     def _settings(self):
-        w = QWidget(); v = QVBoxLayout(w); p, pv = self.panel('Settings', 'Keep your Gemini API key in the local .env file; never paste it into chat.')
+        w = QWidget(); outer = QVBoxLayout(w); outer.setContentsMargins(0, 0, 0, 0); outer.setSpacing(0)
+        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        container = QWidget(); v = QVBoxLayout(container); v.setContentsMargins(0, 0, 6, 0); v.setSpacing(10)
+        p, pv = self.panel('Settings', 'Keep your Gemini API key in the local .env file; never paste it into chat.')
         self.orb_check = self.button(
             'Disable floating bot' if self.orb.isVisible() else 'Enable floating bot',
             self.toggle_orb)
@@ -1525,7 +1547,7 @@ class Nova(QMainWindow):
 
         self.glass_btn = self.button('', self.cycle_glass); pv.addWidget(self.glass_btn)
         tl = QLabel('Glass tint — left is clearest, right is easier to read'); tl.setObjectName('muted'); pv.addWidget(tl)
-        self.tint_slider = QSlider(Qt.Horizontal); self.tint_slider.setRange(6, 150); self.tint_slider.setValue(cl(self.tint, 6, 150)); self.tint_slider.valueChanged.connect(self.set_tint); pv.addWidget(self.tint_slider)
+        self.tint_slider = QSlider(Qt.Horizontal); self.tint_slider.setRange(145, 252); self.tint_slider.setValue(cl(self.tint, 145, 252)); self.tint_slider.valueChanged.connect(self.set_tint); pv.addWidget(self.tint_slider)
 
         # Microphone Sensitivity & AUTO NEAREST HUD section
         self.mic_sens_settings = self._create_mic_sensitivity_widget()
@@ -1540,7 +1562,13 @@ class Nova(QMainWindow):
         pv.addWidget(sec_box)
 
         info = QLabel('API key: .env file\nVoice engine: Gemini Live backend\nTheme: Glass Futuristic'); info.setObjectName('muted'); pv.addWidget(info)
-        self.log = self.textbox('Backend logs…'); pv.addWidget(self.log, 1); v.addWidget(p, 1); return w
+        self.log = self.textbox('Backend logs…')
+        self.log.setMinimumHeight(110)
+        pv.addWidget(self.log, 1)
+        v.addWidget(p, 1)
+        scroll.setWidget(container)
+        outer.addWidget(scroll, 1)
+        return w
     def change_page(self, i):
         self.stack.setCurrentIndex(i)
         for j, b in enumerate(self.nav_buttons): b.setChecked(i == j)
@@ -1809,7 +1837,7 @@ class Nova(QMainWindow):
     def _glass_text(self): self.glass_btn.setText('Glass: Clear — 100% see-through   (click for Frosted blur)' if self.glass_mode == 'clear' else 'Glass: Frosted blur   (click for Clear)')
     def cycle_glass(self):
         self.glass_mode = 'frost' if self.glass_mode == 'clear' else 'clear'; self.settings.setValue('glass_mode', self.glass_mode); self._glass_text(); self._layout_mode(); self.apply_backdrop()
-    def set_tint(self, v): self.tint = int(v); self.root.set_tint(v); self.settings.setValue('tint', self.tint)
+    def set_tint(self, v): self.tint = cl(int(v), 145, 252); self.root.set_tint(self.tint); self.settings.setValue('tint', self.tint)
     def set_orb_state(self, s):
         self.assistant_state = s
         self.hero_orb.set_state(s)
@@ -2042,6 +2070,10 @@ class Nova(QMainWindow):
             elif act == 'hide_floating_bot':
                 if hasattr(self, 'orb') and self.orb and self.orb.isVisible():
                     self.toggle_orb()
+            elif act == 'switch_bot':
+                target_bot = str(ev.get('bot', '')).strip()
+                if target_bot in BOT_NAMES:
+                    self.set_bot(target_bot)
         elif t == 'perm_sync':
             active = ev.get('active', {})
             for k, v in active.items():
