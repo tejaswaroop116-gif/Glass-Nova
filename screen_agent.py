@@ -88,19 +88,48 @@ def ensure_dpi_awareness() -> None:
         pass
 
 
-def get_screen_metrics() -> Dict[str, Any]:
-    """Return physical primary/virtual screen dimensions and DPI scale factor."""
+def get_screen_metrics(prefer_active_monitor: bool = False) -> Dict[str, Any]:
+    """Return physical primary or active-monitor screen dimensions, origin, and DPI scale factor."""
     ensure_dpi_awareness()
     w, h = 1920, 1080
     ox, oy = 0, 0
     dpi_scale = 1.0
     try:
         import ctypes
+        from ctypes import wintypes
         user32 = ctypes.windll.user32
         pw = int(user32.GetSystemMetrics(0))
         ph = int(user32.GetSystemMetrics(1))
         if pw > 0 and ph > 0:
             w, h = pw, ph
+        if prefer_active_monitor:
+            try:
+                class MONITORINFO(ctypes.Structure):
+                    _fields_ = [
+                        ("cbSize", wintypes.DWORD),
+                        ("rcMonitor", wintypes.RECT),
+                        ("rcWork", wintypes.RECT),
+                        ("dwFlags", wintypes.DWORD),
+                    ]
+                hwnd = user32.GetForegroundWindow()
+                # MONITOR_DEFAULTTONEAREST = 2
+                hmon = user32.MonitorFromWindow(hwnd, 2) if hwnd else 0
+                if not hmon:
+                    pt = wintypes.POINT()
+                    user32.GetCursorPos(ctypes.byref(pt))
+                    hmon = user32.MonitorFromPoint(pt, 2)
+                if hmon:
+                    mi = MONITORINFO()
+                    mi.cbSize = ctypes.sizeof(MONITORINFO)
+                    if user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+                        mw = int(mi.rcMonitor.right - mi.rcMonitor.left)
+                        mh = int(mi.rcMonitor.bottom - mi.rcMonitor.top)
+                        if mw > 0 and mh > 0:
+                            ox = int(mi.rcMonitor.left)
+                            oy = int(mi.rcMonitor.top)
+                            w, h = mw, mh
+            except Exception:
+                pass
         try:
             dpi = int(user32.GetDpiForSystem())
             if dpi > 0:
@@ -194,10 +223,11 @@ def _resize_and_encode_jpeg(img: Image.Image, max_dimension: int, quality: int) 
     return buf.getvalue(), img.width, img.height
 
 
-def capture_screen_with_metadata(max_dimension: int = 1600, quality: int = 80) -> Dict[str, Any]:
-    """Capture the current desktop and return JPEG bytes plus physical/image coordinate metadata."""
-    metrics = get_screen_metrics()
+def capture_screen_with_metadata(max_dimension: int = 1600, quality: int = 80, prefer_active_monitor: bool = True) -> Dict[str, Any]:
+    """Capture the current desktop (or active monitor on multi-monitor setups) and return JPEG bytes plus physical/image coordinate metadata."""
+    metrics = get_screen_metrics(prefer_active_monitor=prefer_active_monitor)
     sw, sh = metrics["width"], metrics["height"]
+    ox, oy = metrics["origin_x"], metrics["origin_y"]
     active_window = get_active_window_title()
     ts = time.monotonic()
 
@@ -208,15 +238,15 @@ def capture_screen_with_metadata(max_dimension: int = 1600, quality: int = 80) -
             "screen_height": sh,
             "image_width": iw,
             "image_height": ih,
-            "origin_x": metrics["origin_x"],
-            "origin_y": metrics["origin_y"],
+            "origin_x": ox,
+            "origin_y": oy,
             "dpi_scale": metrics["dpi_scale"],
             "active_window": active_window,
             "timestamp": ts,
             "method": method,
         }
 
-    # Method 1: Windows GDI BitBlt (direct Win32 desktop DC grab, reliable across sessions)
+    # Method 1: Windows GDI BitBlt (direct Win32 desktop DC grab, reliable across sessions & multi-monitor aware)
     try:
         import ctypes
         user32 = ctypes.windll.user32
@@ -231,8 +261,8 @@ def capture_screen_with_metadata(max_dimension: int = 1600, quality: int = 80) -
         except Exception:
             pass
 
-        w = user32.GetSystemMetrics(0)
-        h = user32.GetSystemMetrics(1)
+        w = sw if sw > 0 else user32.GetSystemMetrics(0)
+        h = sh if sh > 0 else user32.GetSystemMetrics(1)
         if w > 0 and h > 0:
             hdc = user32.GetDC(0)
             if hdc:
@@ -240,7 +270,7 @@ def capture_screen_with_metadata(max_dimension: int = 1600, quality: int = 80) -
                     mdc = gdi32.CreateCompatibleDC(hdc)
                     bmp = gdi32.CreateCompatibleBitmap(hdc, w, h)
                     gdi32.SelectObject(mdc, bmp)
-                    gdi32.BitBlt(mdc, 0, 0, w, h, hdc, 0, 0, 0x00CC0020 | 0x40000000)
+                    gdi32.BitBlt(mdc, 0, 0, w, h, hdc, ox, oy, 0x00CC0020 | 0x40000000)
 
                     class BITMAPINFOHEADER(ctypes.Structure):
                         _fields_ = [

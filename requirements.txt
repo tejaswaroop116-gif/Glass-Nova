@@ -10,5 +10,9 @@ pycaw
 comtypes
 vosk
 pypdf
+PyMuPDF
 opencv-python
 mediapipe
+mss
+pywin32
+uiautomation
