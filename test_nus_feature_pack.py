@@ -373,11 +373,18 @@ class ActionRouterAndBrokerTests(unittest.TestCase):
         import bot
         import ui_dialogs
         import ui
+        import tools
+        import tools_state
+        import tools_files
 
-        # 1. Verify DesktopBot is shared between bot.py and ui.py (no duplicate class definition)
+        # 1. Verify DesktopBot & modular tools are shared cleanly (no duplicate definitions)
         self.assertIs(ui.DesktopBot, bot.DesktopBot)
         self.assertIs(ui.WorkflowEditorDialog, ui_dialogs.WorkflowEditorDialog)
         self.assertIs(ui.WalkthroughHighlightOverlay, ui_dialogs.WalkthroughHighlightOverlay)
+        self.assertIs(tools.memory_control, tools_state.memory_control)
+        self.assertIs(tools.task_control, tools_state.task_control)
+        self.assertIs(tools.calculator_operation, tools_files.calculator_operation)
+        self.assertIs(tools.clipboard_control, tools_files.clipboard_control)
 
         # 2. Verify deterministic offline local command matching & strict ACTION_SCHEMAS validation
         sample_queries = [

@@ -33,6 +33,8 @@ def build():
         "mummy",
         "pet_engine",
         "tools",
+        "tools_state",
+        "tools_files",
         "desktop_agent",
         "screen_agent",
         "document_agent",
