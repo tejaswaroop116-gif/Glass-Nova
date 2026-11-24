@@ -456,9 +456,16 @@ def capture_region_jpeg(rect_or_box, max_dimension: int = 1400, quality: int = 8
     return data
 
 
-def analyze_region_bytes(image_bytes: bytes, question: str = "Explain this selected screen region.", rect=None) -> str:
+def analyze_region_bytes(
+    image_bytes: bytes,
+    question: str = "Explain this selected screen region.",
+    rect=None,
+    check_permission: bool = True,
+) -> str:
     """Send user-selected region JPEG bytes and question to the configured Gemini vision model.
     Guidance only — never clicks or types, and does not log password or sensitive content."""
+    if check_permission and not permissions.request_permission("screen_view", f"Analyze selected screen region: '{question}'"):
+        raise PermissionError("Screen viewing permission was denied by the user.")
     if not image_bytes:
         raise ValueError("Selected region image is empty.")
     active_window = get_active_window_title()

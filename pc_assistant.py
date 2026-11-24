@@ -1282,12 +1282,20 @@ TOOLS = {
 
 def _live_action_approval(action: dict) -> bool:
     """Per-action approval check for ApprovedActionBroker during live tool calls.
-    High-impact or multi-step destructive actions require explicit confirmation."""
+    High-impact or destructive actions require explicit action-specific confirmation."""
     name = str(action.get("action") or "")
     args = action.get("arguments") or {}
     if name == "delete_file":
         return _request_step_approval_from_ui(
             1, 1, name, args, f"Permanently delete file or folder: {args.get('path', '')}"
+        )
+    if name == "memory_control" and str(args.get("action", "")).lower().strip() in ("clear", "clear_all"):
+        return _request_step_approval_from_ui(
+            1, 1, name, args, "Permanently clear all saved memories"
+        )
+    if name == "task_control" and str(args.get("action", "")).lower().strip() in ("delete", "remove"):
+        return _request_step_approval_from_ui(
+            1, 1, name, args, f"Permanently delete tracked task '{args.get('task_id', '')}'"
         )
     if name == "app_control" and str(args.get("action", "")).lower() in ("close", "restart"):
         # Check if mouse_keyboard permission is granted (handled by permission_checker)

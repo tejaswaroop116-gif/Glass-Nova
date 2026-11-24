@@ -28,8 +28,27 @@ jobs:
         run: |
           python -B -c "import ast, pathlib; files = sorted(pathlib.Path('.').glob('*.py')); [ast.parse(p.read_text(encoding='utf-8'), filename=str(p)) for p in files]; print(f'AST syntax check passed for {len(files)} Python files.')"
 
+      - name: Run security audit and reliability tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -B test_security_audit.py -v
+
       - name: Run Glass Nova feature pack unit tests
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
           python -B test_nus_feature_pack.py -v
+
+      - name: Run Glass Nova integration tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -B test_upgrade_integration.py
+
+      - name: Run screen interaction and permission pipeline tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -B test_screen_interaction.py -v
+          python -B test_pipeline_e2e.py

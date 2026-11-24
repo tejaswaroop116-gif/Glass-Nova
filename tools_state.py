@@ -16,9 +16,7 @@ except OSError:
 
 
 def _check_perm(category: str, action_desc: str, details: dict = None) -> bool:
-    """Enforce permission checks when a permission prompt handler is active."""
-    if permissions.prompt_callback is None and not permissions.is_granted(category):
-        return True
+    """Fail-closed permission check backed by PermissionManager."""
     return permissions.request_permission(category, action_desc, details or {})
 
 

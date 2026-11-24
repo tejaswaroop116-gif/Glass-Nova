@@ -598,8 +598,14 @@ def _verify_browser_url_open(url: str, before_wins: dict, extra_keywords: tuple 
 
 def open_url(url: str):
     global _last_youtube_query
-    url = url.strip()
-    if not re.match(r"^https?://", url, re.I):
+    url = str(url or "").strip()
+    if not url:
+        return _err("A website URL is required.")
+    scheme_match = re.match(r"^([a-zA-Z][a-zA-Z0-9+.-]*):", url)
+    if scheme_match:
+        if scheme_match.group(1).lower() not in ("http", "https"):
+            return _err(f"Refusing to open unsupported URL scheme '{scheme_match.group(1)}:'.")
+    else:
         url = "https://" + url
     m_yt = re.search(r"youtube\.com/results\?search_query=([^&]+)", url, re.I)
     yt_kw = ""
@@ -1028,6 +1034,8 @@ def window_control(action: str, target: str = ""):
         if "tab" in a or a in ("close_tab", "new_tab", "next_tab", "prev_tab", "previous_tab", "reopen_tab"):
             from desktop_agent import browser_tab_action
             return browser_tab_action(a, target)
+        if not _check_perm("mouse_keyboard", f"Window control: '{action}'"):
+            return _err("Mouse and keyboard permission was denied.", permission_denied=True)
 
         user32 = ctypes.windll.user32
         user32.GetForegroundWindow.restype = wintypes.HWND
@@ -1173,6 +1181,8 @@ def app_control(action: str, app: str):
             ):
                 from desktop_agent import close_browser_tab
                 return close_browser_tab(app_clean)
+            if not _check_perm("mouse_keyboard", f"Close application '{app}'"):
+                return _err("Mouse and keyboard permission was denied.", permission_denied=True)
             aliases = {
                 "notepad": "notepad.exe",
                 "calc": "CalculatorApp.exe",

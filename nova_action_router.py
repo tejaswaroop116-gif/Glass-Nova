@@ -74,9 +74,20 @@ ACTION_SCHEMAS: dict[str, dict[str, Any]] = {
 }
 
 DANGEROUS_PATTERNS = (
-    "cmd.exe", "powershell", "pwsh", "wscript", "cscript", "reg.exe", "regedit",
-    "format ", "del /", "rm -rf", "shutdown /", "taskkill /f /im explorer",
+    "cmd.exe", "powershell", "pwsh", "wscript", "cscript", "mshta",
+    "rundll32", "regsvr32", "certutil", "bitsadmin", "schtasks",
+    "reg.exe", "regedit", "bcdedit", "diskpart", "icacls", "takeown",
+    "format ", "del /", "erase /", "rmdir /s", "rd /s", "rm -rf",
+    "remove-item", "shutdown /", "restart-computer", "taskkill /f /im explorer",
+    "net user", "cipher /w",
 )
+
+_DANGEROUS_REGEXES = (
+    re.compile(r"\b(?:cmd|powershell|pwsh|wscript|cscript|mshta|rundll32|regsvr32|certutil|bitsadmin|schtasks|bcdedit|diskpart|regedit)\b", re.I),
+    re.compile(r"\b(?:rm\s+-rf|del\s+/[a-z]|rmdir\s+/s|rd\s+/s|format\s+[a-z]:|shutdown\s+/[srt]|taskkill\s+/f)", re.I),
+)
+
+_SHELL_META_RE = re.compile(r"(?:&&|\|\||[;|`<>]|\$\()")
 
 
 def validate_proposed_action(action: dict[str, Any], allowed_schemas: Optional[dict[str, dict[str, Any]]] = None) -> tuple[bool, str]:
@@ -100,10 +111,34 @@ def validate_proposed_action(action: dict[str, Any], allowed_schemas: Optional[d
     unknown_keys = set(args.keys()) - allowed_keys
     if unknown_keys:
         return False, f"Unknown arguments {sorted(unknown_keys)} for action '{name}'."
-    serialized = str(args).lower()
+
+    # Structural per-action argument checks (beyond simple substring matching)
+    if name == "open_url":
+        raw_url = str(args.get("url") or "").strip()
+        m_scheme = re.match(r"^([a-zA-Z][a-zA-Z0-9+.-]*):", raw_url)
+        if m_scheme and m_scheme.group(1).lower() not in ("http", "https"):
+            return False, f"Rejected unsupported URL scheme '{m_scheme.group(1)}:' in action 'open_url'."
+    if name in ("open_app", "app_control", "open_folder"):
+        for field in ("app", "path"):
+            val = str(args.get(field) or "")
+            if val and _SHELL_META_RE.search(val):
+                return False, f"Rejected shell metacharacters in '{field}' for action '{name}'."
+    if name in ("volume_control", "brightness_control") and "value" in args and args["value"] is not None:
+        try:
+            v = int(args["value"])
+            if v < 0 or v > 100:
+                return False, f"Argument 'value' for '{name}' must be between 0 and 100."
+        except (TypeError, ValueError):
+            return False, f"Argument 'value' for '{name}' must be an integer."
+
+    serialized = " ".join(str(v) for v in args.values()).lower()
     for pat in DANGEROUS_PATTERNS:
         if pat in serialized:
             return False, f"Rejected dangerous argument pattern '{pat}' in action '{name}'."
+    for rx in _DANGEROUS_REGEXES:
+        m = rx.search(serialized)
+        if m:
+            return False, f"Rejected dangerous command pattern '{m.group(0)}' in action '{name}'."
     return True, "Valid"
 
 
@@ -221,16 +256,17 @@ class ApprovedActionBroker:
         self.handlers[action_name] = handler
 
     def execute(self, action: dict[str, Any]) -> dict[str, Any]:
-        name = str(action.get("action", ""))
+        if not isinstance(action, dict):
+            return {"ok": False, "verified": False, "error": "Proposed action must be a dictionary."}
+        name = str(action.get("action", "")).strip()
         args = action.get("arguments", {})
         if name not in self.handlers:
             return {"ok": False, "verified": False, "error": f"Action is not registered: {name}"}
         if not isinstance(args, dict):
             return {"ok": False, "verified": False, "error": "Action arguments must be an object."}
-        if name in ACTION_SCHEMAS:
-            valid, reason = validate_proposed_action(action)
-            if not valid:
-                return {"ok": False, "verified": False, "error": reason}
+        valid, reason = validate_proposed_action(action)
+        if not valid:
+            return {"ok": False, "verified": False, "error": reason}
         if not self.approval(action):
             return {"ok": False, "verified": False, "denied": True, "message": "User declined this action."}
         if self.permission_checker and name in ACTION_SCHEMAS:

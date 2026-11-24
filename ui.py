@@ -1309,7 +1309,8 @@ class Nova(QMainWindow):
         from screen_agent import analyze_region_bytes
         self.set_orb_state('thinking')
         try:
-            return analyze_region_bytes(image_bytes, question, rect)
+            # ScreenPointingService already obtained explicit user screen_view permission before capture
+            return analyze_region_bytes(image_bytes, question, rect, check_permission=False)
         finally:
             self.set_orb_state('idle')
 

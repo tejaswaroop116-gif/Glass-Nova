@@ -1,11 +1,44 @@
 """tools_files.py - File, folder, calculator, and Windows-native clipboard tools for Glass Nova."""
+import ast
 import ctypes
+import operator
 import os
 import re
 import time
 from pathlib import Path
 
 from tools_state import WORKSPACE, _check_perm, _err, _ok
+
+
+_SAFE_BIN_OPS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+}
+_SAFE_UNARY_OPS = {
+    ast.UAdd: operator.pos,
+    ast.USub: operator.neg,
+}
+
+
+def _eval_arith_node(node):
+    if isinstance(node, ast.Expression):
+        return _eval_arith_node(node.body)
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return node.value
+    if isinstance(node, ast.UnaryOp) and type(node.op) in _SAFE_UNARY_OPS:
+        return _SAFE_UNARY_OPS[type(node.op)](_eval_arith_node(node.operand))
+    if isinstance(node, ast.BinOp) and type(node.op) in _SAFE_BIN_OPS:
+        left = _eval_arith_node(node.left)
+        right = _eval_arith_node(node.right)
+        if isinstance(node.op, ast.Pow) and abs(right) > 100:
+            raise ValueError("Exponent too large.")
+        return _SAFE_BIN_OPS[type(node.op)](left, right)
+    raise ValueError("Unsupported expression.")
 
 
 def calculator_operation(expression: str):
@@ -23,7 +56,8 @@ def calculator_operation(expression: str):
     if not expr.strip():
         return _err("I couldn't find a valid arithmetic expression.")
     try:
-        value = eval(expr, {"__builtins__": {}}, {})
+        tree = ast.parse(expr, mode="eval")
+        value = _eval_arith_node(tree)
         return _ok(f"The answer is {value}.", result=value)
     except Exception:
         return _err("I couldn't calculate that expression.")
@@ -179,6 +213,8 @@ def write_text_file(filename: str, text: str):
 
 
 def read_text_file(filename: str):
+    if not _check_perm("document_access", f"Read text file '{filename}'"):
+        return _err("Document access permission was denied.", permission_denied=True)
     try:
         p = WORKSPACE / Path(filename).name
         return _ok(f"Read {p.name}.", text=p.read_text(encoding="utf-8"))
@@ -289,6 +325,8 @@ def _clipboard_set_text(text: str):
 
 
 def clipboard_control(action: str, text: str = ""):
+    if not _check_perm("mouse_keyboard", f"Clipboard control: '{action}'"):
+        return _err("Mouse and keyboard permission was denied.", permission_denied=True)
     try:
         import pyautogui
         a = action.lower().strip().replace("-", "_").replace(" ", "_")
