@@ -51,7 +51,7 @@ from desktop_agent import (
 )
 from hand_gesture import gesture_manager
 from media_ducking import ducker
-from nova_action_router import NovaActionRouter, ApprovedActionBroker, validate_proposed_action, ACTION_SCHEMAS, match_offline_command
+from nova_action_router import NovaActionRouter, ApprovedActionBroker, validate_proposed_action, ACTION_SCHEMAS, match_offline_command, OFFLINE_VOICE_PHRASES
 from nova_walkthrough import Walkthrough, WalkthroughStep, walkthrough_from_plan
 from nova_workflows import (
     Workflow,
@@ -88,11 +88,7 @@ def emit(ev_type: str, **kwargs):
             pass
 
 
-if not API_KEY:
-    emit("fatal", text="GEMINI_API_KEY is missing from .env")
-    raise SystemExit("GEMINI_API_KEY is missing from .env")
-
-client = genai.Client(api_key=API_KEY)
+client = genai.Client(api_key=API_KEY) if API_KEY else None
 
 CLOUDY_BRIDGE_HOST = "127.0.0.1"
 CLOUDY_BRIDGE_PORT = 47631
@@ -1570,6 +1566,11 @@ class LiveManager:
         self._wake_greet_until = 0.0
         self._last_model_text = ""
         self._last_model_ts = 0.0
+        self._offline_vosk_rec = None
+        self._offline_vosk_failed = False
+        self._offline_partial = ""
+        self._offline_partial_ts = 0.0
+        self._offline_last_speech_ts = 0.0
         self._reset_turn()
         ducker.start()
 
@@ -1613,10 +1614,15 @@ class LiveManager:
             pass
 
     async def session_loop(self):
+        if self.client is None:
+            emit("status", v="offline")
+            emit("log", text="[Offline Mode] No GEMINI_API_KEY configured — Offline Local Commands (voice & chat) are active.")
+            await self.stop_evt.wait()
+            return
         delay, first = 0.0, True
         while not self.closing:
             connected, started = False, 0.0
-            emit("status", v="connecting" if first else "reconnecting")
+            emit("status", v="connecting" if first else "offline")
             first = False
             try:
                 async with self.client.aio.live.connect(model=MODEL, config=self.build_config()) as session:
@@ -1635,13 +1641,15 @@ class LiveManager:
                 up = text.upper()
                 code = getattr(e, "code", None)
                 if code in (401, 403) or any(m in up for m in FATAL_MARKERS):
-                    emit("fatal", text="Gemini rejected the API key. Check GEMINI_API_KEY in the .env file.")
-                    self.closing = self.fatal = True
-                    break
+                    emit("status", v="offline")
+                    emit("log", text="Gemini rejected the API key. Running in Offline Local Mode.")
+                    await self.stop_evt.wait()
+                    return
                 if not connected and any(m in up for m in MODEL_MARKERS):
-                    emit("fatal", text=f"The Gemini Live model '{MODEL}' is not available to this API key. Check MODEL in the .env file. ({e})")
-                    self.closing = self.fatal = True
-                    break
+                    emit("status", v="offline")
+                    emit("log", text=f"The Gemini Live model '{MODEL}' is not available ({e}). Running in Offline Local Mode.")
+                    await self.stop_evt.wait()
+                    return
                 emit("log", text=f"[connection] {text}")
                 if not connected and self.use_extras and any(k in up for k in ("RESUMPTION", "COMPRESSION", "CONTEXT_WINDOW", "INVALID ARGUMENT", "UNKNOWN NAME", "1007")):
                     self.use_extras = False
@@ -1657,7 +1665,7 @@ class LiveManager:
                     delay = 1.0 if delay == 0 else min(delay * 2, 10.0)
                     if not self._outage_reported:
                         self._outage_reported = True
-                        emit("error", text=f"Connection to Gemini Live lost or unavailable ({e}). Retrying automatically…")
+                        emit("log", text=f"[Offline Mode] Gemini Live unreachable ({e}) — Offline Local Commands (voice & chat) are active.")
             finally:
                 self.session = None
                 self.ready.clear()
@@ -1667,7 +1675,7 @@ class LiveManager:
                     self.set_state(self._rest_state())
             if self.closing:
                 break
-            emit("status", v="reconnecting")
+            emit("status", v="offline")
             await self._sleep_or_stop(delay)
         self.stop_evt.set()
 
@@ -1876,13 +1884,175 @@ class LiveManager:
             except Exception as e:
                 emit("log", text=f"[tool] could not return results to Gemini: {type(e).__name__}: {e}")
 
+    def _speak_offline_tts(self, text: str):
+        """Speak a reply locally using Windows SAPI when offline and voice_output is enabled."""
+        if not self.voice_output or not text or IS_TTY:
+            return
+        clean = str(text).replace("[Offline Local Fallback]", "").strip()
+        if not clean:
+            return
+
+        def _tts_worker(msg_text: str):
+            try:
+                import comtypes.client
+            except Exception:
+                comtypes = None
+            try:
+                _mic_stream_state["speaking"] = True
+                _mic_stream_state["mute_until"] = time.monotonic() + max(1.5, min(6.0, len(msg_text) * 0.065))
+                if sys.platform == "win32":
+                    try:
+                        import win32com.client
+                        import pythoncom
+                        pythoncom.CoInitialize()
+                        try:
+                            voice = win32com.client.Dispatch("SAPI.SpVoice")
+                            voice.Rate = 1
+                            voice.Speak(msg_text)
+                        finally:
+                            pythoncom.CoUninitialize()
+                    except Exception:
+                        pass
+            finally:
+                _mic_stream_state["speaking"] = False
+                _mic_stream_state["mute_until"] = time.monotonic() + 0.35
+
+        threading.Thread(target=_tts_worker, args=(clean,), daemon=True).start()
+
+    def execute_offline_action_sync(self, text: str, from_voice: bool = False) -> bool:
+        """Synchronous execution of deterministic offline commands or offline greeting.
+        Returns True if handled, False if unrecognized."""
+        raw_clean = " ".join((text or "").strip().lower().split())
+        if not raw_clean:
+            return False
+
+        # Offline conversational greeting
+        if raw_clean in ("hi", "hello", "hey", "hey nova", "nova", "are you there", "help", "offline help", "what can you do offline"):
+            reply = (
+                "Hey! I'm running in Offline Local Mode. You can ask me by voice or chat to:\n"
+                "• Open or close apps (Calculator, Notepad, File Explorer, Paint, Task Manager, Settings, Chrome, Edge, VS Code)\n"
+                "• Open folders (Downloads, Documents, Desktop, Pictures, Music, Videos)\n"
+                "• Control volume (mute, unmute, volume up/down, set volume to 50%) & brightness\n"
+                "• Manage windows (minimize, maximize, close window, switch window, show desktop)\n"
+                "• Take screenshots, check system/battery status, check time/date, list tasks/memories, or toggle the companion & hand gestures."
+            )
+            emit("model", text=reply)
+            emit("turn_end", interrupted=False)
+            if from_voice:
+                self._speak_offline_tts("I am here in offline mode. What can I do for you?")
+            self.set_state(self._rest_state())
+            return True
+
+        offline_act = match_offline_command(text)
+        if offline_act is None:
+            return False
+
+        self.set_state("executing")
+        act_name = offline_act.get("action", "")
+        b_res = live_action_broker.execute(offline_act)
+        raw_out = b_res.get("result") if b_res.get("ok") else b_res
+
+        msg = ""
+        if isinstance(raw_out, dict):
+            # Format human-readable responses for time, tasks, memories, and system status
+            if act_name == "task_control" and offline_act.get("arguments", {}).get("action") == "now" and raw_out.get("local_time"):
+                msg = f"Current local date & time: {raw_out.get('local_time')} ({raw_out.get('timezone', 'local')})."
+            elif act_name == "task_control" and "tasks" in raw_out:
+                t_list = raw_out.get("tasks") or []
+                if not t_list:
+                    msg = "You have no saved tasks."
+                else:
+                    titles = ", ".join(f"{t.get('title', 'Task')} [{t.get('status', 'active')}]" for t in t_list[:8])
+                    msg = f"{raw_out.get('message', '')} {titles}"
+            elif act_name == "memory_control" and "memories" in raw_out:
+                m_list = raw_out.get("memories") or []
+                if not m_list:
+                    msg = "You have no saved memories."
+                else:
+                    items_str = ", ".join(f"{m.get('key')}: {m.get('value')}" for m in m_list[:8])
+                    msg = f"{raw_out.get('message', '')} {items_str}"
+            else:
+                msg = str(raw_out.get("message") or raw_out.get("error") or "")
+        else:
+            msg = str(raw_out or "")
+
+        if not msg:
+            msg = f"Completed {offline_act.get('description') or act_name}."
+
+        emit("tool", name=act_name, result=msg)
+        emit("model", text=msg)
+        emit("turn_end", interrupted=False)
+        if from_voice or not self.ready.is_set():
+            self._speak_offline_tts(msg)
+        self.set_state(self._rest_state())
+        return True
+
+    async def _execute_offline_action(self, text: str, from_voice: bool = False) -> bool:
+        """Async wrapper around execute_offline_action_sync."""
+        return await asyncio.to_thread(self.execute_offline_action_sync, text, from_voice)
+
+    def _get_offline_vosk_recognizer(self):
+        if self._offline_vosk_rec is not None:
+            return self._offline_vosk_rec
+        if self._offline_vosk_failed:
+            return None
+        try:
+            import vosk
+            vosk.SetLogLevel(-1)
+            model = vosk.Model(model_name="vosk-model-small-en-us-0.15")
+            grammar = json.dumps(OFFLINE_VOICE_PHRASES)
+            self._offline_vosk_rec = vosk.KaldiRecognizer(model, 16000, grammar)
+            return self._offline_vosk_rec
+        except Exception as e:
+            self._offline_vosk_failed = True
+            emit("log", text=f"[Offline Voice] Vosk model unavailable: {e}")
+            return None
+
+    async def _process_offline_voice_pcm(self, raw_pcm: bytes, is_speech: bool, now: float):
+        rec = self._get_offline_vosk_recognizer()
+        if rec is None:
+            return
+        if is_speech:
+            self._offline_last_speech_ts = now
+
+        spoken = ""
+        if rec.AcceptWaveform(raw_pcm):
+            res = json.loads(rec.Result() or "{}")
+            spoken = (res.get("text") or "").replace("[unk]", " ").strip()
+            self._offline_partial = ""
+        else:
+            part = json.loads(rec.PartialResult() or "{}")
+            p_txt = (part.get("partial") or "").replace("[unk]", " ").strip()
+            if p_txt:
+                if p_txt != self._offline_partial:
+                    self._offline_partial = p_txt
+                    self._offline_partial_ts = now
+                elif (not is_speech) and (now - self._offline_partial_ts >= 0.55):
+                    spoken = self._offline_partial
+                    self._offline_partial = ""
+                    rec.Reset()
+
+        spoken = " ".join(spoken.split())
+        if not spoken or spoken in ("hey", "nova", "hey nova"):
+            return
+
+        emit("user", text=spoken)
+        handled = await self._execute_offline_action(spoken, from_voice=True)
+        if not handled:
+            emit("model", text=f"I heard '{spoken}', which requires an online Gemini Live connection. Try an offline command like 'open calculator', 'mute volume', 'take screenshot', or 'system status'.")
+            emit("turn_end", interrupted=False)
+
     async def text_worker(self):
         while not self.closing:
             text = await self.text_q.get()
+            # If Gemini Live is not connected right now, immediately try deterministic offline execution (0ms wait)
+            if not self.ready.is_set() or self.session is None:
+                if await self._execute_offline_action(text, from_voice=False):
+                    continue
             sent = False
             for _attempt in range(2):
                 try:
-                    await asyncio.wait_for(self.ready.wait(), 20)
+                    await asyncio.wait_for(self.ready.wait(), 2.0)
                 except asyncio.TimeoutError:
                     break
                 sess = self.session
@@ -1891,33 +2061,24 @@ class LiveManager:
                 try:
                     self.set_state("thinking")
                     async with self.send_lock:
-                        try:
-                            await sess.send_realtime_input(text=text)
-                        except TypeError:
-                            await sess.send_client_content(
-                                turns=types.Content(role="user", parts=[types.Part.from_text(text=text)]),
-                                turn_complete=True
-                            )
+                         try:
+                             await sess.send_realtime_input(text=text)
+                         except TypeError:
+                             await sess.send_client_content(
+                                 turns=types.Content(role="user", parts=[types.Part.from_text(text=text)]),
+                                 turn_complete=True
+                             )
                     sent = True
                     break
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
                     emit("log", text=f"[chat] send failed: {type(e).__name__}: {e}")
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(0.25)
             if not sent:
-                offline_act = match_offline_command(text)
-                if offline_act is not None:
-                    self.set_state("executing")
-                    b_res = await asyncio.to_thread(live_action_broker.execute, offline_act)
-                    raw_out = b_res.get("result") if b_res.get("ok") else b_res
-                    msg = (raw_out.get("message") if isinstance(raw_out, dict) else str(raw_out or "")) or "Offline command executed."
-                    emit("model", text=f"[Offline Local Fallback] {msg}")
-                    emit("turn_end")
+                if not await self._execute_offline_action(text, from_voice=False):
                     self.set_state(self._rest_state())
-                else:
-                    self.set_state(self._rest_state())
-                    emit("error", text="Your message could not be delivered because Gemini Live is not connected. Check your internet connection and API key, then send it again.")
+                    emit("error", text="Gemini Live is currently offline. Local commands (e.g., 'open calculator', 'open downloads', 'mute volume', 'take screenshot', 'system status', 'what time is it') work offline right now!")
 
     async def mic_start(self):
         if self.mic_task is not None and not self.mic_task.done():
@@ -1953,6 +2114,8 @@ class LiveManager:
         if _pending_perms:
             return
         now = time.monotonic()
+        raw_input_pcm = data
+        is_speech_frame = False
         if not _mic_stream_state.get("barge_in_triggered") and (
             (self._wake_greet_until and now < self._wake_greet_until)
             or _is_mic_muted_for_echo()
@@ -1989,16 +2152,20 @@ class LiveManager:
                 )
 
             if rms >= MIC_NOISE_GATE_RMS:
+                is_speech_frame = True
                 _mic_stream_state["voice_hangover_until"] = now + 0.65
                 _mic_stream_state["silent_frames_sent"] = 0
             elif now < float(_mic_stream_state.get("voice_hangover_until", 0.0) or 0.0):
+                is_speech_frame = True
                 _mic_stream_state["silent_frames_sent"] = 0
             else:
                 # Filter out quiet micro-sounds, static, and fan noise so they don't trigger false VAD interruptions
                 data = b"\x00" * len(data)
 
         sess = self.session
-        if sess is None:
+        if sess is None or not self.ready.is_set():
+            # Offline Voice Mode: transcribe & execute local voice commands via Vosk!
+            await self._process_offline_voice_pcm(raw_input_pcm if is_speech_frame else data, is_speech_frame, now)
             return
         try:
             async with self.send_lock:
@@ -2179,6 +2346,10 @@ class LiveManager:
                                 emit("model", text="Cancelled active operation.")
                                 emit("turn_end", interrupted=False)
                                 continue
+                        # Fast-path: if Gemini Live is not connected right now, execute offline commands in 0ms!
+                        if not self.ready.is_set() or self.session is None:
+                            if await self._execute_offline_action(text, from_voice=False):
+                                continue
                         self.text_q.put_nowait(text)
                 elif cmd == "walkthrough_cmd":
                     w_act = msg.get("action", "status")
@@ -2231,10 +2402,22 @@ class LiveManager:
                 elif cmd == "wake_greet":
                     ducker.pulse(8.0)
                     await self.mic_start()
-                    self._wake_greet_until = time.monotonic() + 2.8
-                    self.text_q.put_nowait(
-                        "[System notification: The user just said 'Hey Nova' to wake you up. Greet the user warmly and concisely in English with 'Hey! I'm here. What can I do for you?', and wait for their command.]"
-                    )
+                    trailing_cmd = str(msg.get("command", "") or "").strip()
+                    if trailing_cmd:
+                        emit("user", text=trailing_cmd)
+                        if not self.ready.is_set() or self.session is None or match_offline_command(trailing_cmd) is not None:
+                            if await self._execute_offline_action(trailing_cmd, from_voice=True):
+                                continue
+                        self.text_q.put_nowait(trailing_cmd)
+                    elif not self.ready.is_set() or self.session is None:
+                        emit("model", text="Hey! I'm here (Offline Local Mode). What can I do for you?")
+                        emit("turn_end", interrupted=False)
+                        self._speak_offline_tts("Hey! I'm here. What can I do for you?")
+                    else:
+                        self._wake_greet_until = time.monotonic() + 2.8
+                        self.text_q.put_nowait(
+                            "[System notification: The user just said 'Hey Nova' to wake you up. Greet the user warmly and concisely in English with 'Hey! I'm here. What can I do for you?', and wait for their command.]"
+                        )
                 elif cmd == "voice_output":
                     self.voice_output = bool(msg.get("on", msg.get("enabled", True)))
                     if not self.voice_output:
@@ -2379,13 +2562,13 @@ async def amain():
     global MODEL, _ipc_loop_running
     _ipc_loop_running = True
     load_dotenv(HERE / ".env")
-    key = os.getenv("GEMINI_API_KEY")
+    key = (os.getenv("GEMINI_API_KEY") or "").strip()
     MODEL = os.getenv("MODEL", "gemini-3.8-live")
+    client = genai.Client(api_key=key) if key else None
     if not key:
-        emit("fatal", text="GEMINI_API_KEY is missing from the .env file.")
-        return 2
+        emit("log", text="GEMINI_API_KEY is missing from .env — starting in Offline Local Mode.")
 
-    mgr = LiveManager(genai.Client(api_key=key))
+    mgr = LiveManager(client)
     loop = asyncio.get_running_loop()
     cmd_q = asyncio.Queue()
     threading.Thread(target=_stdin_reader, args=(loop, cmd_q), name="nova-stdin", daemon=True).start()

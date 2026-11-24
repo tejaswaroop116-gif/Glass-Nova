@@ -260,73 +260,196 @@ class ApprovedActionBroker:
             return {"ok": False, "verified": False, "error": str(exc)}
 
 
+# Spoken vocabulary list for local Vosk recognition when offline or after 'Hey Nova'
+OFFLINE_VOICE_PHRASES: list[str] = [
+    "hey nova", "nova", "hey",
+    "open calculator", "open notepad", "open file explorer", "open explorer",
+    "open downloads", "open documents", "open desktop", "open pictures", "open music", "open videos",
+    "open paint", "open task manager", "open settings", "open windows settings",
+    "open chrome", "open google chrome", "open edge", "open microsoft edge", "open vs code",
+    "close calculator", "close notepad", "close file explorer", "close explorer", "close chrome", "close edge", "close window",
+    "minimize window", "maximize window", "restore window", "switch window", "show desktop",
+    "mute", "mute volume", "unmute", "unmute volume", "volume up", "increase volume", "louder",
+    "volume down", "decrease volume", "quieter", "lower volume", "check volume", "what is the volume",
+    "set volume to ten", "set volume to twenty", "set volume to thirty", "set volume to forty",
+    "set volume to fifty", "set volume to sixty", "set volume to seventy", "set volume to eighty",
+    "set volume to ninety", "set volume to one hundred",
+    "brightness up", "increase brightness", "brighter", "brightness down", "decrease brightness", "dimmer",
+    "take screenshot", "take a screenshot", "capture screenshot", "screenshot",
+    "system status", "check system status", "battery status", "cpu usage", "memory usage",
+    "what time is it", "what is the time", "current time", "what is today's date", "date", "time",
+    "list tasks", "show tasks", "my tasks", "list memories", "show memories",
+    "start hand gesture", "enable hand gesture", "turn on hand gesture",
+    "stop hand gesture", "disable hand gesture", "turn off hand gesture",
+    "show companion", "show floating bot", "show bot", "hide companion", "hide floating bot", "hide bot",
+    "minimize nova", "close nova",
+    "[unk]",
+]
+
+_WORD_TO_NUM = {
+    "zero": 0, "ten": 10, "twenty": 20, "thirty": 30, "forty": 40,
+    "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
+    "hundred": 100, "one hundred": 100,
+}
+
+
 def match_offline_command(user_text: str) -> dict[str, Any] | None:
     """Deterministic local intent matcher for common system commands when offline or Gemini Live is unavailable.
-    Returns a structured action dict {'action': ..., 'arguments': ..., 'description': ...} or None."""
-    import re
+    Returns a schema-valid action dict {'action': ..., 'arguments': ..., 'description': ...} or None."""
     clean = " ".join((user_text or "").strip().lower().split())
     if not clean:
         return None
 
-    # Open common apps
-    for app_key, aliases in (
-        ("calculator", ("open calculator", "launch calculator", "start calculator", "open calc")),
-        ("notepad", ("open notepad", "launch notepad", "start notepad")),
-        ("explorer", ("open file explorer", "open explorer", "launch explorer")),
-        ("cmd", ("open command prompt", "open terminal", "open cmd")),
-        ("settings", ("open windows settings", "open system settings")),
-        ("taskmgr", ("open task manager", "launch task manager")),
+    # Strip optional leading wake phrase ("hey nova ...", "nova ...", "please ...")
+    clean = re.sub(r"^\s*(?:hey\s+nova|nova|please|can\s+you|could\s+you)[\s,:-]*", "", clean).strip()
+    clean = re.sub(r"^\s*(?:please|can\s+you|could\s+you)[\s,:-]*", "", clean).strip()
+    if not clean:
+        return None
+
+    # Convert spoken number words ("fifty") to digits ("50") for volume/brightness
+    for w_num, d_num in sorted(_WORD_TO_NUM.items(), key=lambda kv: -len(kv[0])):
+        clean = re.sub(rf"\b{re.escape(w_num)}\b", str(d_num), clean)
+
+    # 1. Floating companion & Nova window control
+    if any(p in clean for p in ("show companion", "show floating bot", "show bot", "enable floating bot", "turn on floating bot")):
+        return {"action": "nova_control", "arguments": {"action": "show_floating_bot"}, "description": "Show floating companion bot"}
+    if any(p in clean for p in ("hide companion", "hide floating bot", "hide bot", "disable floating bot", "turn off floating bot")):
+        return {"action": "nova_control", "arguments": {"action": "hide_floating_bot"}, "description": "Hide floating companion bot"}
+    if any(p in clean for p in ("toggle companion", "toggle floating bot", "toggle bot")):
+        return {"action": "nova_control", "arguments": {"action": "toggle_bot"}, "description": "Toggle floating companion bot"}
+    if clean in ("minimize nova", "hide nova"):
+        return {"action": "nova_control", "arguments": {"action": "minimize"}, "description": "Minimize Nova to system tray"}
+    if clean in ("close nova", "exit nova", "quit nova"):
+        return {"action": "nova_control", "arguments": {"action": "close"}, "description": "Close Nova"}
+
+    # 2. Hand gesture mouse control
+    if any(p in clean for p in ("start hand gesture", "enable hand gesture", "turn on hand gesture", "hand gesture on", "start gesture")):
+        return {"action": "hand_gesture_control", "arguments": {"action": "start"}, "description": "Start hand gesture mouse control"}
+    if any(p in clean for p in ("stop hand gesture", "disable hand gesture", "turn off hand gesture", "hand gesture off", "stop gesture")):
+        return {"action": "hand_gesture_control", "arguments": {"action": "stop"}, "description": "Stop hand gesture mouse control"}
+
+    # 3. Write text in Notepad ("write hello world in notepad")
+    m_np = re.match(r"^(?:write|type)\s+(.+?)\s+(?:in|into)\s+notepad$", clean)
+    if m_np and m_np.group(1).strip():
+        txt = m_np.group(1).strip()
+        return {
+            "action": "write_in_notepad",
+            "arguments": {"text": txt, "open_if_closed": True},
+            "description": f"Write '{txt}' in Notepad",
+        }
+
+    # 4. Close specific application ("close calculator", "close notepad", "close chrome", etc.)
+    for app_key, close_phrases in (
+        ("calculator", ("close calculator", "close calc", "quit calculator", "exit calculator")),
+        ("notepad", ("close notepad", "quit notepad", "exit notepad")),
+        ("file explorer", ("close file explorer", "close explorer", "close folder", "close folders")),
+        ("paint", ("close paint", "quit paint")),
+        ("task manager", ("close task manager",)),
+        ("chrome", ("close chrome", "close google chrome")),
+        ("edge", ("close edge", "close microsoft edge")),
+        ("vscode", ("close vs code", "close vscode", "close visual studio code")),
     ):
-        if any(a in clean for a in aliases):
+        if any(p in clean for p in close_phrases):
             return {
-                "action": "open_app",
-                "arguments": {"name": app_key},
-                "description": f"Open {app_key} (offline local command)",
+                "action": "app_control",
+                "arguments": {"action": "close", "app": app_key},
+                "description": f"Close {app_key}",
             }
 
-    # Open common folders
+    # 5. Window controls (minimize, maximize, restore, close active window, switch window, show desktop)
+    if any(p in clean for p in ("minimize window", "minimize current window", "minimize active window", "minimize this window")):
+        return {"action": "window_control", "arguments": {"action": "minimize"}, "description": "Minimize active window"}
+    if any(p in clean for p in ("maximize window", "maximize current window", "maximize active window", "maximize this window")):
+        return {"action": "window_control", "arguments": {"action": "maximize"}, "description": "Maximize active window"}
+    if any(p in clean for p in ("restore window", "unmaximize window")):
+        return {"action": "window_control", "arguments": {"action": "restore"}, "description": "Restore active window"}
+    if any(p in clean for p in ("close window", "close current window", "close active window", "close this window")):
+        return {"action": "window_control", "arguments": {"action": "close"}, "description": "Close active window"}
+    if any(p in clean for p in ("switch window", "next window", "alt tab")):
+        return {"action": "window_control", "arguments": {"action": "switch"}, "description": "Switch active window"}
+    if any(p in clean for p in ("show desktop", "minimize all windows", "go to desktop")):
+        return {"action": "window_control", "arguments": {"action": "show_desktop"}, "description": "Show desktop"}
+
+    # 6. Open common folders
     for folder_key in ("downloads", "documents", "desktop", "pictures", "music", "videos"):
-        if f"open {folder_key}" in clean or f"show {folder_key}" in clean:
+        if (
+            f"open {folder_key}" in clean
+            or f"show {folder_key}" in clean
+            or f"go to {folder_key}" in clean
+            or clean in (folder_key, f"{folder_key} folder")
+        ):
             return {
                 "action": "open_folder",
                 "arguments": {"path": folder_key},
                 "description": f"Open {folder_key} folder (offline local command)",
             }
 
-    # Volume controls
-    if any(p in clean for p in ("mute volume", "mute audio", "mute sound")) or clean == "mute":
+    # 7. Open common apps (uses required argument 'app' matching ACTION_SCHEMAS['open_app']!)
+    for app_key, aliases in (
+        ("calculator", ("open calculator", "launch calculator", "start calculator", "open calc", "calculator", "calc")),
+        ("notepad", ("open notepad", "launch notepad", "start notepad", "notepad")),
+        ("file explorer", ("open file explorer", "open explorer", "launch explorer", "file explorer", "file manager", "open files", "open this pc", "this pc", "my computer")),
+        ("paint", ("open paint", "launch paint", "start paint", "mspaint")),
+        ("settings", ("open windows settings", "open system settings", "open settings", "windows settings", "system settings")),
+        ("task manager", ("open task manager", "launch task manager", "task manager", "taskmgr")),
+        ("chrome", ("open chrome", "open google chrome", "launch chrome", "start chrome")),
+        ("edge", ("open edge", "open microsoft edge", "launch edge", "start edge")),
+        ("vs code", ("open vs code", "open vscode", "open visual studio code", "launch vs code")),
+        ("wps office", ("open wps", "open wps office", "launch wps office")),
+    ):
+        if clean in aliases or any(a in clean for a in aliases if a.startswith(("open ", "launch ", "start "))):
+            return {
+                "action": "open_app",
+                "arguments": {"app": app_key},
+                "description": f"Open {app_key} (offline local command)",
+            }
+
+    # 8. Volume controls (uses 'value' matching ACTION_SCHEMAS['volume_control']!)
+    if any(p in clean for p in ("mute volume", "mute audio", "mute sound", "mute speaker")) or clean == "mute":
         return {"action": "volume_control", "arguments": {"action": "mute"}, "description": "Mute system audio"}
-    if any(p in clean for p in ("unmute volume", "unmute audio", "unmute sound")) or clean == "unmute":
+    if any(p in clean for p in ("unmute volume", "unmute audio", "unmute sound", "unmute speaker")) or clean == "unmute":
         return {"action": "volume_control", "arguments": {"action": "unmute"}, "description": "Unmute system audio"}
-    m_vol = re.search(r"volume\s+(?:to\s+)?(\d{1,3})\s*%?", clean)
-    if m_vol and any(w in clean for w in ("set", "volume", "change")):
+    if any(p in clean for p in ("check volume", "what is the volume", "current volume", "get volume")):
+        return {"action": "volume_control", "arguments": {"action": "get"}, "description": "Check current system volume"}
+    m_vol = re.search(r"volume\s+(?:to\s+|at\s+)?(\d{1,3})\s*%?", clean)
+    if m_vol:
         lvl = max(0, min(100, int(m_vol.group(1))))
-        return {"action": "volume_control", "arguments": {"action": "set", "level": lvl}, "description": f"Set volume to {lvl}%"}
-    if any(p in clean for p in ("volume up", "increase volume", "turn up volume", "louder")):
+        return {"action": "volume_control", "arguments": {"action": "set", "value": lvl}, "description": f"Set volume to {lvl}%"}
+    if any(p in clean for p in ("volume up", "increase volume", "turn up volume", "raise volume", "louder")):
         return {"action": "volume_control", "arguments": {"action": "up", "amount": 10}, "description": "Increase volume"}
-    if any(p in clean for p in ("volume down", "decrease volume", "turn down volume", "quieter", "lower volume")):
+    if any(p in clean for p in ("volume down", "decrease volume", "turn down volume", "lower volume", "quieter")):
         return {"action": "volume_control", "arguments": {"action": "down", "amount": 10}, "description": "Decrease volume"}
 
-    # Brightness controls
-    m_bri = re.search(r"brightness\s+(?:to\s+)?(\d{1,3})\s*%?", clean)
+    # 9. Brightness controls (uses 'value' matching ACTION_SCHEMAS['brightness_control']!)
+    if any(p in clean for p in ("check brightness", "what is the brightness", "current brightness", "get brightness")):
+        return {"action": "brightness_control", "arguments": {"action": "get"}, "description": "Check current screen brightness"}
+    m_bri = re.search(r"brightness\s+(?:to\s+|at\s+)?(\d{1,3})\s*%?", clean)
     if m_bri:
         lvl = max(0, min(100, int(m_bri.group(1))))
-        return {"action": "brightness_control", "arguments": {"action": "set", "level": lvl}, "description": f"Set brightness to {lvl}%"}
-    if any(p in clean for p in ("brightness up", "increase brightness", "brighter")):
+        return {"action": "brightness_control", "arguments": {"action": "set", "value": lvl}, "description": f"Set brightness to {lvl}%"}
+    if any(p in clean for p in ("brightness up", "increase brightness", "raise brightness", "brighter")):
         return {"action": "brightness_control", "arguments": {"action": "up", "amount": 10}, "description": "Increase brightness"}
-    if any(p in clean for p in ("brightness down", "decrease brightness", "dimmer", "lower brightness")):
+    if any(p in clean for p in ("brightness down", "decrease brightness", "lower brightness", "dimmer", "darker")):
         return {"action": "brightness_control", "arguments": {"action": "down", "amount": 10}, "description": "Decrease brightness"}
 
-    # Screenshot & system status
-    if any(p in clean for p in ("take screenshot", "take a screenshot", "capture screenshot")):
+    # 10. Screenshot & system status
+    if any(p in clean for p in ("take screenshot", "take a screenshot", "capture screenshot", "capture screen")) or clean == "screenshot":
         return {"action": "take_screenshot", "arguments": {}, "description": "Take a desktop screenshot"}
-    if any(p in clean for p in ("system status", "battery status", "cpu usage", "check system status")):
+    if any(p in clean for p in ("system status", "battery status", "battery level", "cpu usage", "ram usage", "memory usage", "disk space", "check system status", "system info")) or clean in ("status", "battery"):
         return {"action": "system_status", "arguments": {}, "description": "Check system CPU, RAM, disk, and battery status"}
 
-    # Hand gesture mouse control
-    if any(p in clean for p in ("start hand gesture", "enable hand gesture", "turn on hand gesture")):
-        return {"action": "hand_gesture_control", "arguments": {"action": "start"}, "description": "Start hand gesture mouse control"}
-    if any(p in clean for p in ("stop hand gesture", "disable hand gesture", "turn off hand gesture")):
-        return {"action": "hand_gesture_control", "arguments": {"action": "stop"}, "description": "Stop hand gesture mouse control"}
+    # 11. Time, date, local tasks & local memories
+    if any(p in clean for p in ("what time is it", "what is the time", "current time", "tell me the time", "what is today's date", "today's date", "current date", "what day is it")) or clean in ("time", "date"):
+        return {"action": "task_control", "arguments": {"action": "now"}, "description": "Get current local date and time"}
+    if any(p in clean for p in ("list tasks", "show tasks", "my tasks", "show my tasks", "show reminders", "list reminders")):
+        return {"action": "task_control", "arguments": {"action": "list"}, "description": "List saved local tasks and reminders"}
+    if any(p in clean for p in ("list memories", "show memories", "my memories", "what do you remember")):
+        return {"action": "memory_control", "arguments": {"action": "list"}, "description": "List saved local memories"}
+
+    # 12. Calculator math expressions ("calculate 25 * 4", "what is 120 + 350")
+    m_calc = re.match(r"^(?:calculate|compute|what\s+is|solve)\s+([\d\s\.\+\-\*\/\(\)%^]+)$", clean)
+    if m_calc and any(op in m_calc.group(1) for op in ("+", "-", "*", "/", "%", "^")):
+        expr = m_calc.group(1).strip().replace("^", "**")
+        return {"action": "calculator_operation", "arguments": {"expression": expr}, "description": f"Calculate {expr}"}
 
     return None

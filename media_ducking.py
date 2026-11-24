@@ -101,7 +101,7 @@ class MediaDucker:
     def _run(self):
         try:
             import comtypes
-            comtypes.CoInitialize()
+            comtypes.CoInitializeEx(0)
         except Exception:
             pass
         while not self._stop.is_set():

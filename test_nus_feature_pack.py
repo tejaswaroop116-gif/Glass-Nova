@@ -366,7 +366,10 @@ class ActionRouterAndBrokerTests(unittest.TestCase):
         dlg.close()
 
     def test_offline_local_fallback_and_modular_ui_imports(self):
-        from nova_action_router import match_offline_command
+        import asyncio
+        from nova_action_router import match_offline_command, validate_proposed_action
+        from wake_word import WakeWordListener
+        import pc_assistant
         import bot
         import ui_dialogs
         import ui
@@ -376,27 +379,51 @@ class ActionRouterAndBrokerTests(unittest.TestCase):
         self.assertIs(ui.WorkflowEditorDialog, ui_dialogs.WorkflowEditorDialog)
         self.assertIs(ui.WalkthroughHighlightOverlay, ui_dialogs.WalkthroughHighlightOverlay)
 
-        # 2. Verify deterministic offline local command matching
-        c1 = match_offline_command("please open calculator")
-        self.assertIsNotNone(c1)
-        self.assertEqual(c1["action"], "open_app")
-        self.assertEqual(c1["arguments"], {"name": "calculator"})
-
-        c2 = match_offline_command("open downloads")
-        self.assertEqual(c2["action"], "open_folder")
-        self.assertEqual(c2["arguments"], {"path": "downloads"})
-
-        c3 = match_offline_command("set volume to 45%")
-        self.assertEqual(c3["action"], "volume_control")
-        self.assertEqual(c3["arguments"], {"action": "set", "level": 45})
-
-        c4 = match_offline_command("take a screenshot")
-        self.assertEqual(c4["action"], "take_screenshot")
-
-        c5 = match_offline_command("check system status")
-        self.assertEqual(c5["action"], "system_status")
+        # 2. Verify deterministic offline local command matching & strict ACTION_SCHEMAS validation
+        sample_queries = [
+            ("please open calculator", "open_app", {"app": "calculator"}),
+            ("calculator", "open_app", {"app": "calculator"}),
+            ("open downloads", "open_folder", {"path": "downloads"}),
+            ("set volume to 45%", "volume_control", {"action": "set", "value": 45}),
+            ("hey nova set volume to fifty", "volume_control", {"action": "set", "value": 50}),
+            ("set brightness to 70", "brightness_control", {"action": "set", "value": 70}),
+            ("close calculator", "app_control", {"action": "close", "app": "calculator"}),
+            ("minimize window", "window_control", {"action": "minimize"}),
+            ("write hello world in notepad", "write_in_notepad", {"text": "hello world", "open_if_closed": True}),
+            ("take a screenshot", "take_screenshot", {}),
+            ("check system status", "system_status", {}),
+            ("what time is it", "task_control", {"action": "now"}),
+            ("calculate 25 * 4", "calculator_operation", {"expression": "25 * 4"}),
+            ("show companion", "nova_control", {"action": "show_floating_bot"}),
+        ]
+        for query, expected_action, expected_args in sample_queries:
+            act = match_offline_command(query)
+            self.assertIsNotNone(act, f"Failed to match offline command: {query}")
+            self.assertEqual(act["action"], expected_action)
+            self.assertEqual(act["arguments"], expected_args)
+            valid, reason = validate_proposed_action(act)
+            self.assertTrue(valid, f"Offline command '{query}' failed schema validation: {reason}")
 
         self.assertIsNone(match_offline_command("explain quantum computing in simple terms"))
+
+        # 3. Verify single-breath wake-word trailing command extraction
+        wl = WakeWordListener()
+        self.assertEqual(wl._extract_trailing_command("hey nova open calculator"), "open calculator")
+        self.assertEqual(wl.last_command, "open calculator")
+        self.assertEqual(wl._extract_trailing_command("hey nova"), "")
+
+        # 4. Verify end-to-end offline execution in LiveManager (< 0.1s with session=None)
+        pc_assistant.ducker.enabled = False
+        mgr = pc_assistant.LiveManager(None)
+        mgr.voice_output = False
+        try:
+            self.assertTrue(mgr.execute_offline_action_sync("hello"))
+            self.assertTrue(mgr.execute_offline_action_sync("what time is it"))
+            self.assertTrue(mgr.execute_offline_action_sync("calculate 25 * 4"))
+            self.assertFalse(mgr.execute_offline_action_sync("explain quantum computing in simple terms"))
+        finally:
+            pc_assistant.ducker.stop()
+            mgr.player.close()
 
 
 if __name__ == "__main__":

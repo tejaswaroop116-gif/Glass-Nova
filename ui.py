@@ -775,7 +775,10 @@ class Nova(QMainWindow):
             self.open_main_window()
 
     def _handle_wake_word_qt(self):
-        self.append_log('[Wake Word] "Hey Nova" detected!')
+        trailing_cmd = getattr(self.wake_listener, 'last_command', '') if self.wake_listener else ''
+        if self.wake_listener:
+            self.wake_listener.last_command = ''
+        self.append_log(f'[Wake Word] "Hey Nova" detected!{(" (" + trailing_cmd + ")") if trailing_cmd else ""}')
         if hasattr(self, 'companion_bridge') and self.companion_bridge:
             self.companion_bridge.on_wake_word()
         else:
@@ -789,7 +792,9 @@ class Nova(QMainWindow):
             if self.ensure_backend():
                 self.mic_starting = True
                 self._voice_btn_text()
-                QTimer.singleShot(150, lambda: self.send_cmd(cmd='wake_greet'))
+                QTimer.singleShot(150, lambda c=trailing_cmd: self.send_cmd(cmd='wake_greet', command=c))
+        elif trailing_cmd and self.backend_running():
+            self.send_cmd(cmd='text', text=trailing_cmd)
 
     def _handle_wake_status_qt(self, status):
         self._update_wake_badge(status=status)
@@ -995,10 +1000,8 @@ class Nova(QMainWindow):
     MARK = '@@NOVA@@'
     def backend_running(self): return self.process.state() != QProcess.NotRunning
     def ensure_backend(self):
-        """Start the single backend process if it is not running. Returns False if it cannot be started."""
+        """Start the single backend process if it is not running (supports both Gemini Live and Offline Local Mode)."""
         if self.backend_running(): return True
-        if not (ROOT / '.env').exists():
-            QMessageBox.information(self, 'API key needed', 'Create a .env file beside ui.py and add your key:\n\nGEMINI_API_KEY=your_key_here\n\nSee .env.example for the template.'); self.change_page(4); return False
         self._out_raw = self._err_raw = b''; self._stopping = self._fatal_shown = False; self.backend_state = 'connecting'
         self.process.setProgram(sys.executable); self.process.setArguments(['-u', str(ROOT / 'pc_assistant.py')]); self.process.start()
         self._refresh_status(); self.set_orb_state('thinking'); self.append_log('Starting assistant…')
@@ -1042,19 +1045,13 @@ class Nova(QMainWindow):
         self.voice_btn.setText(txt)
         if hasattr(self, 'overview_voice_btn'): self.overview_voice_btn.setText(txt)
     def _auto_start_backend(self):
-        env_file = ROOT / '.env'
-        if env_file.exists():
-            try:
-                content = env_file.read_text(encoding='utf-8')
-                for line in content.splitlines():
-                    line = line.strip()
-                    if line.startswith('GEMINI_API_KEY=') and len(line.split('=', 1)[1].strip()) > 5:
-                        self.ensure_backend()
-                        break
-            except Exception: pass
+        self.ensure_backend()
     def _refresh_status(self):
         if not self.backend_running(): s, b = '●  Assistant stopped', 'Ready when you are'
-        elif self.backend_state == 'reconnecting': s, b = '●  Reconnecting…', 'Reconnecting to Gemini Live…'
+        elif self.backend_state == 'offline':
+            s = '●  Offline Mode (voice on)' if self.mic_on else '●  Offline Mode (local commands)'
+            b = 'Offline Local Mode — local voice & chat commands ready'
+        elif self.backend_state == 'reconnecting': s, b = '●  Reconnecting…', 'Reconnecting to Gemini Live (offline commands active)…'
         elif self.backend_state != 'ready': s, b = '●  Connecting…', 'Connecting to Gemini Live…'
         elif self.mic_on: s, b = '●  Assistant running', 'Listening and ready'
         else: s, b = '●  Connected (voice off)', 'Connected — type a message or start voice'
