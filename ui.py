@@ -762,9 +762,6 @@ class Nova(QMainWindow):
             if kind == 'ghost':
                 from ghost import GhostWidget
                 b = GhostWidget(self.settings)
-            elif kind == 'mummy':
-                from mummy import MummyBot
-                b = MummyBot()
             elif kind == 'pet':
                 from pet_engine import PetWidget
                 b = PetWidget(self.settings)

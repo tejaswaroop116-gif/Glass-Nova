@@ -2,12 +2,12 @@
 
 [![Glass Nova Tests](https://github.com/tejaswaroop30/Glass-Nova/actions/workflows/tests.yml/badge.svg)](https://github.com/tejaswaroop30/Glass-Nova/actions/workflows/tests.yml)
 ![Platform: Windows 10/11](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011-0078D6?logo=windows)
-![Python: 3.11%2B](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
+![Python: 3.11–3.12](https://img.shields.io/badge/Python-3.11%E2%80%933.12-3776AB?logo=python&logoColor=white)
 ![UI: PySide6](https://img.shields.io/badge/UI-PySide6-41CD52)
 
 **Glass Nova** is an open-source, AI-powered Windows desktop assistant built in Python and PySide6. It combines real-time **Gemini Live** voice and chat interaction, offline `"Hey Nova"` wake-word activation, **Offline Local Mode**, verified **Windows desktop automation**, **screen and document understanding**, **webcam hand-gesture mouse control**, and **animated desktop companions** behind a fail-closed permission system.
 
-> **Project Website (GitHub Pages):** https://tejaswaroop30.github.io/Glass-Nova/ *(once GitHub Pages is enabled from `/docs`)*
+> **Website:** https://tejaswaroop30.github.io/Glass-Nova/
 > **Repository:** https://github.com/tejaswaroop30/Glass-Nova
 
 ---
@@ -57,7 +57,7 @@
 - **Guided Walkthroughs**: Step-by-step interactive guidance (`Next`, `Back`, `Pause`, `Stop`) with non-intrusive visual highlights around UI elements.
 - **Reusable Semantic Workflows**: Records only allow-listed semantic actions (never raw keystrokes, passwords, API keys, or clipboard secrets), with a structured step editor and per-step user confirmation on replay.
 - **Webcam Hand-Gesture Mouse Control**: Move the cursor, click, drag, and scroll using hand landmarks (`hand_gesture.py`).
-- **5 Animated Desktop Companions**: `Original NOVA Robot`, `Ghost`, `Mummy`, `NOVA Painter Pet`, and `Cloudy` (toggle anytime with `Ctrl+Shift+N`).
+- **4 Animated Desktop Companions**: `Original NOVA Robot`, `Ghost`, `NOVA Painter Pet`, and `Cloudy` (toggle anytime with `Ctrl+Shift+N`).
 
 ---
 
@@ -68,7 +68,7 @@ Glass Nova runs as a two-process desktop architecture: a frameless PySide6 glass
 | Layer | Modules | Responsibility |
 | :--- | :--- | :--- |
 | **Desktop UI & Theme** | `ui.py`, `ui_theme.py`, `ui_dialogs.py` | Frameless glass window, system tray, permission dialogs, workflow editor, mic HUD |
-| **Companions & Bridge** | `bot.py`, `cloudy.py`, `ghost.py`, `mummy.py`, `pet_engine.py`, `nova_companion_bridge.py` | Animated always-on-top desktop companions and wake-word integration |
+| **Companions & Bridge** | `bot.py`, `cloudy.py`, `ghost.py`, `pet_engine.py`, `nova_companion_bridge.py` | Animated always-on-top desktop companions and wake-word integration |
 | **Backend & Audio** | `pc_assistant.py`, `nova_audio.py`, `nova_tool_defs.py`, `wake_word.py`, `media_ducking.py` | Gemini Live session, offline local mode, non-blocking audio playback, Vosk wake word, PyCAW ducking |
 | **Routing & Safety** | `nova_action_router.py`, `permissions.py` | Allow-listed `ACTION_SCHEMAS`, regex/structural argument validation, `ApprovedActionBroker`, fail-closed permissions |
 | **Desktop & Media Agents** | `desktop_agent.py`, `desktop_agent_browser.py`, `screen_agent.py`, `document_agent.py`, `video_agent.py`, `hand_gesture.py` | UIAutomation, browser/YouTube controls, multi-monitor capture, PDF/video analysis, gesture mouse |

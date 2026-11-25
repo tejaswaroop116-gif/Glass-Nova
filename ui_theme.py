@@ -15,7 +15,6 @@ APP_NAME = "Nova"
 BOT_NAMES = {
     "mechanical": "Original NOVA Robot",
     "ghost": "Ghost",
-    "mummy": "Mummy",
     "pet": "NOVA Painter Pet",
     "cloudy": "Cloudy",
 }

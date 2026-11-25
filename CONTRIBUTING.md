@@ -9,7 +9,7 @@ Thank you for your interest in contributing to **Glass Nova**!
    git clone https://github.com/tejaswaroop30/Glass-Nova.git
    cd Glass-Nova
    ```
-2. Create a Python 3.11+ virtual environment and install dependencies:
+2. Create a Python 3.11–3.12 virtual environment and install dependencies:
    ```powershell
    py -3 -m venv .venv
    .venv\Scripts\activate

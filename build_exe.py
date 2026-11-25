@@ -31,7 +31,6 @@ def build():
         "ui_theme",
         "cloudy",
         "ghost",
-        "mummy",
         "pet_engine",
         "tools",
         "tools_state",
