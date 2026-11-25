@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Glass Nova — AI Desktop Assistant for Windows (Gemini Live, Voice &amp; Automation)</title>
+  <meta name="description" content="Glass Nova is an AI-powered Windows desktop assistant featuring Gemini Live voice interaction, offline Hey Nova wake-word activation, verified desktop automation, screen understanding, hand-gesture mouse control, and animated companions." />
+  <meta name="keywords" content="Glass Nova, AI desktop assistant, Windows AI assistant, Gemini Live assistant, Python voice assistant, desktop automation, screen understanding, PySide6, Vosk wake word, open source AI agent" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://tejaswaroop116-gif.github.io/Glass-Nova/" />
+
+  <!-- Open Graph / Social Sharing -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Glass Nova — AI Desktop Assistant for Windows" />
+  <meta property="og:description" content="Frameless Python &amp; PySide6 AI desktop assistant for Windows 11 with Gemini Live voice chat, Offline Local Mode, fail-closed permissions, verified desktop automation, and animated companions." />
+  <meta property="og:url" content="https://tejaswaroop116-gif.github.io/Glass-Nova/" />
+  <meta property="og:site_name" content="Glass Nova" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Glass Nova — AI Desktop Assistant for Windows" />
+  <meta name="twitter:description" content="AI-powered Windows desktop assistant with Gemini Live voice, offline commands, verified UI automation, screen understanding, and animated companions." />
+
+  <!-- Structured Data (JSON-LD) for Search Engines & AI Search -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Glass Nova",
+    "applicationCategory": "DesktopEnhancementApplication",
+    "operatingSystem": "Windows 10, Windows 11",
+    "programmingLanguage": "Python",
+    "url": "https://tejaswaroop116-gif.github.io/Glass-Nova/",
+    "codeRepository": "https://github.com/tejaswaroop116-gif/Glass-Nova",
+    "description": "Glass Nova is an AI-powered Windows desktop assistant featuring Gemini Live voice interaction, offline wake-word activation, verified desktop automation, screen and document understanding, hand-gesture mouse control, and animated companions.",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+
+  <style>
+    :root {
+      --bg-1: #040f20;
+      --bg-2: #0a2240;
+      --panel: rgba(12, 36, 66, 0.82);
+      --border: rgba(93, 210, 255, 0.45);
+      --text: #eefaff;
+      --muted: #b9dff0;
+      --accent: #39c6ff;
+      --accent-soft: #a5f1ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      color: var(--text);
+      background: radial-gradient(circle at top right, #123e6e 0%, var(--bg-2) 45%, var(--bg-1) 100%);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+    .wrap {
+      max-width: 1020px;
+      margin: 0 auto;
+      padding: 40px 20px 64px;
+    }
+    header {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 36px 32px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+    }
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .pill {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--accent-soft);
+      background: rgba(32, 135, 180, 0.25);
+      border: 1px solid rgba(93, 210, 255, 0.5);
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(2rem, 4vw, 2.8rem);
+      line-height: 1.15;
+      color: #ffffff;
+    }
+    .lead {
+      margin: 0 0 24px;
+      font-size: 1.1rem;
+      color: var(--muted);
+      max-width: 780px;
+    }
+    .cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .btn {
+      display: inline-block;
+      padding: 11px 20px;
+      border-radius: 12px;
+      text-decoration: none;
+      font-weight: 700;
+      color: #ffffff;
+      border: 1px solid var(--border);
+      background: rgba(24, 88, 138, 0.65);
+    }
+    .btn.primary {
+      background: linear-gradient(135deg, #20a9e8, #1755a5);
+      border-color: var(--accent-soft);
+    }
+    .btn:hover { filter: brightness(1.12); }
+    main { margin-top: 28px; }
+    h2 {
+      margin: 32px 0 14px;
+      font-size: 1.45rem;
+      color: var(--accent-soft);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid rgba(93, 210, 255, 0.32);
+      border-radius: 18px;
+      padding: 20px;
+    }
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 1.08rem;
+      color: #ffffff;
+    }
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.96rem;
+    }
+    pre {
+      background: rgba(4, 15, 30, 0.9);
+      border: 1px solid rgba(93, 210, 255, 0.35);
+      border-radius: 14px;
+      padding: 16px;
+      overflow-x: auto;
+      color: #d6f4ff;
+      font-size: 0.92rem;
+    }
+    footer {
+      margin-top: 44px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(93, 210, 255, 0.25);
+      color: var(--muted);
+      font-size: 0.9rem;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    footer a { color: var(--accent-soft); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="badge-row">
+        <span class="pill">Windows 10 / 11</span>
+        <span class="pill">Python 3.11+ &amp; PySide6</span>
+        <span class="pill">Gemini Live + Offline Mode</span>
+        <span class="pill">Fail-Closed Permissions</span>
+      </div>
+      <h1>Glass Nova</h1>
+      <p class="lead">
+        An AI-powered Windows desktop assistant featuring persistent Gemini Live voice and chat interaction,
+        offline <strong>"Hey Nova"</strong> wake-word activation, verified Windows desktop automation,
+        screen and document understanding, webcam hand-gesture mouse control, and animated desktop companions.
+      </p>
+      <div class="cta-row">
+        <a class="btn primary" href="https://github.com/tejaswaroop116-gif/Glass-Nova">View on GitHub</a>
+        <a class="btn" href="https://github.com/tejaswaroop116-gif/Glass-Nova#installation--quick-start">Quick Start Guide</a>
+        <a class="btn" href="https://github.com/tejaswaroop116-gif/Glass-Nova/actions">CI Test Status</a>
+      </div>
+    </header>
+
+    <main>
+      <section aria-labelledby="features-heading">
+        <h2 id="features-heading">Core Capabilities</h2>
+        <div class="grid">
+          <article class="card">
+            <h3>Gemini Live Voice &amp; Chat</h3>
+            <p>One persistent voice and text session with adaptive near-field barge-in, echo suppression, PyCAW media ducking, and a live microphone sensitivity HUD.</p>
+          </article>
+          <article class="card">
+            <h3>Offline Wake Word &amp; Local Mode</h3>
+            <p>Local Vosk "Hey Nova" wake-word listener and 0ms offline commands for apps, folders, volume, brightness, tabs, clipboard, tasks, memories, permissions, and companion controls.</p>
+          </article>
+          <article class="card">
+            <h3>Verified Desktop Automation</h3>
+            <p>DPI-aware Windows UIAutomation with Gemini Vision fallback and structured verification so Nova confirms whether clicks, typing, tab closures, and YouTube controls succeeded.</p>
+          </article>
+          <article class="card">
+            <h3>Screen, PDF &amp; Video Understanding</h3>
+            <p>Permission-gated screen inspection, Point at Screen region selection (Ctrl+Shift+P), multi-page PDF/document analysis, and lecture/video frame explanation.</p>
+          </article>
+          <article class="card">
+            <h3>Fail-Closed Security &amp; Workflows</h3>
+            <p>9 separate permission categories, allow-listed action schema validation, destructive action confirmation, guided walkthroughs, and secret-free semantic workflow replay.</p>
+          </article>
+          <article class="card">
+            <h3>Companions &amp; Hand Gestures</h3>
+            <p>5 selectable always-on-top desktop companions (Original NOVA Robot, Ghost, Mummy, NOVA Painter Pet, Cloudy) plus optional webcam hand-gesture mouse control.</p>
+          </article>
+        </div>
+      </section>
+
+      <section aria-labelledby="quickstart-heading">
+        <h2 id="quickstart-heading">Quick Start on Windows</h2>
+        <pre><code>git clone https://github.com/tejaswaroop116-gif/Glass-Nova.git
+cd Glass-Nova
+Start_Glass_Nova.bat</code></pre>
+        <p style="color: var(--muted);">
+          Add your <code>GEMINI_API_KEY</code> in <code>.env</code> for online Gemini Live voice and vision,
+          or run immediately in Offline Local Mode without an API key.
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <span>Glass Nova — Python AI Desktop Assistant for Windows</span>
+      <span>
+        <a href="https://github.com/tejaswaroop116-gif/Glass-Nova">GitHub Repository</a> ·
+        <a href="https://github.com/tejaswaroop116-gif/Glass-Nova/blob/main/CONTRIBUTING.md">Contributing</a> ·
+        <a href="https://github.com/tejaswaroop116-gif/Glass-Nova/blob/main/README.md">Documentation</a>
+      </span>
+    </footer>
+  </div>
+</body>
+</html>

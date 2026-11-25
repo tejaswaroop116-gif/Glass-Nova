@@ -402,6 +402,30 @@ class ActionRouterAndBrokerTests(unittest.TestCase):
             ("what time is it", "task_control", {"action": "now"}),
             ("calculate 25 * 4", "calculator_operation", {"expression": "25 * 4"}),
             ("show companion", "nova_control", {"action": "show_floating_bot"}),
+            ("turn on bot", "nova_control", {"action": "show_floating_bot"}),
+            ("turn off bot", "nova_control", {"action": "hide_floating_bot"}),
+            ("toggle bot", "nova_control", {"action": "toggle_bot"}),
+            ("close yourself", "nova_control", {"action": "close"}),
+            ("minimize yourself", "nova_control", {"action": "minimize"}),
+            ("give permission for hand gesture", "manage_permission", {"action": "grant", "category": "hand gesture"}),
+            ("allow mouse", "manage_permission", {"action": "grant", "category": "mouse"}),
+            ("revoke all permissions", "manage_permission", {"action": "revoke", "category": "all"}),
+            ("check permissions", "manage_permission", {"action": "status"}),
+            ("pause hand gesture", "hand_gesture_control", {"action": "pause"}),
+            ("resume hand gesture", "hand_gesture_control", {"action": "resume"}),
+            ("show hand preview", "hand_gesture_control", {"action": "show_preview"}),
+            ("hide hand preview", "hand_gesture_control", {"action": "hide_preview"}),
+            ("enable auto nearest", "mic_sensitivity_control", {"action": "auto_nearest"}),
+            ("set mic sensitivity to 75", "mic_sensitivity_control", {"action": "set", "value": 75}),
+            ("read clipboard", "clipboard_control", {"action": "read"}),
+            ("undo", "press_keyboard_hotkey", {"keys": "ctrl+z"}),
+            ("new tab", "window_control", {"action": "new_tab"}),
+            ("scroll down", "scroll_desktop", {"direction": "down", "amount": 5}),
+            ("list downloads", "list_folder", {"path": "downloads"}),
+            ("create folder demo on desktop", "create_folder", {"path": "desktop\\demo"}),
+            ("add task buy groceries", "task_control", {"action": "create", "title": "buy groceries"}),
+            ("remember favorite color is blue", "memory_control", {"action": "remember", "key": "favorite color", "value": "blue"}),
+            ("recall favorite color", "memory_control", {"action": "get", "key": "favorite color"}),
         ]
         for query, expected_action, expected_args in sample_queries:
             act = match_offline_command(query)
@@ -427,6 +451,16 @@ class ActionRouterAndBrokerTests(unittest.TestCase):
             self.assertTrue(mgr.execute_offline_action_sync("hello"))
             self.assertTrue(mgr.execute_offline_action_sync("what time is it"))
             self.assertTrue(mgr.execute_offline_action_sync("calculate 25 * 4"))
+            # Offline permission grant & revoke for hand gesture
+            pc_assistant.permissions.revoke_all()
+            self.assertTrue(mgr.execute_offline_action_sync("give permission for hand gesture"))
+            self.assertTrue(pc_assistant.permissions.is_granted("mouse_keyboard"))
+            self.assertTrue(pc_assistant.permissions.is_granted("media_access"))
+            self.assertTrue(mgr.execute_offline_action_sync("revoke all permissions"))
+            self.assertFalse(pc_assistant.permissions.is_granted("mouse_keyboard"))
+            # Offline companion & Nova self-close command
+            self.assertTrue(mgr.execute_offline_action_sync("turn on bot"))
+            self.assertTrue(mgr.execute_offline_action_sync("close yourself"))
             self.assertFalse(mgr.execute_offline_action_sync("explain quantum computing in simple terms"))
         finally:
             pc_assistant.ducker.stop()

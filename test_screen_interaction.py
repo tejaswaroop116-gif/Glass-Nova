@@ -1,6 +1,6 @@
 """Tests for Glass Nova screen understanding, coordinate accuracy, clicking, and verification.
 
-Run:  .venv\\Scripts\\python.exe -B C:\\Users\\tejas\\Pictures\\Nova_Upgrade\\test_screen_interaction.py -v
+Run:  .venv\\Scripts\\python.exe -B test_screen_interaction.py -v
 """
 import io
 import os

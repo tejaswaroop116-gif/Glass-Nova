@@ -1342,11 +1342,12 @@ class LiveManager:
         if raw_clean in ("hi", "hello", "hey", "hey nova", "nova", "are you there", "help", "offline help", "what can you do offline"):
             reply = (
                 "Hey! I'm running in Offline Local Mode. You can ask me by voice or chat to:\n"
-                "• Open or close apps (Calculator, Notepad, File Explorer, Paint, Task Manager, Settings, Chrome, Edge, VS Code)\n"
-                "• Open folders (Downloads, Documents, Desktop, Pictures, Music, Videos)\n"
-                "• Control volume (mute, unmute, volume up/down, set volume to 50%) & brightness\n"
-                "• Manage windows (minimize, maximize, close window, switch window, show desktop)\n"
-                "• Take screenshots, check system/battery status, check time/date, list tasks/memories, or toggle the companion & hand gestures."
+                "• Control Nova & Companion: close yourself, minimize nova, show/hide/toggle floating bot\n"
+                "• Manage Permissions: give permission for hand gesture / camera / mouse / screen / all, revoke all permissions, check permissions\n"
+                "• Hand Gesture & Mic: start/stop/pause/resume hand gesture, show/hide hand preview, enable auto nearest, set mic sensitivity\n"
+                "• Apps & Folders: open/close Calculator, Notepad, File Explorer, Paint, Task Manager, Settings, Chrome, Edge, VS Code; open/list/create folders\n"
+                "• Windows, Tabs, Clipboard & Controls: volume, brightness, minimize/maximize/close window, new/close/switch tab, scroll, read/clear clipboard, copy/paste/undo/save\n"
+                "• Productivity: take screenshots, check system/battery status, time/date, add/list tasks, remember/recall/list memories, or calculate math."
             )
             emit("model", text=reply)
             emit("turn_end", interrupted=False)
@@ -1366,7 +1367,7 @@ class LiveManager:
 
         msg = ""
         if isinstance(raw_out, dict):
-            # Format human-readable responses for time, tasks, memories, and system status
+            # Format human-readable responses for time, tasks, memories, clipboard, and system status
             if act_name == "task_control" and offline_act.get("arguments", {}).get("action") == "now" and raw_out.get("local_time"):
                 msg = f"Current local date & time: {raw_out.get('local_time')} ({raw_out.get('timezone', 'local')})."
             elif act_name == "task_control" and "tasks" in raw_out:
@@ -1383,6 +1384,18 @@ class LiveManager:
                 else:
                     items_str = ", ".join(f"{m.get('key')}: {m.get('value')}" for m in m_list[:8])
                     msg = f"{raw_out.get('message', '')} {items_str}"
+            elif act_name == "memory_control" and isinstance(raw_out.get("memory"), dict):
+                mem = raw_out["memory"]
+                msg = f"{mem.get('key', 'Memory')}: {mem.get('value', '')}"
+            elif act_name == "system_status" and raw_out.get("ok"):
+                cpu = raw_out.get("cpu_percent")
+                ram = raw_out.get("memory_percent")
+                bat = raw_out.get("battery_percent")
+                bat_str = f", Battery: {bat}%" if bat is not None else ""
+                msg = f"System status — CPU: {cpu}%, RAM: {ram}%{bat_str}."
+            elif act_name == "clipboard_control" and raw_out.get("ok") and raw_out.get("text"):
+                preview = str(raw_out["text"])[:200]
+                msg = f"Clipboard: {preview}"
             else:
                 msg = str(raw_out.get("message") or raw_out.get("error") or "")
         else:
