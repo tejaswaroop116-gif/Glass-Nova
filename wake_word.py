@@ -14,6 +14,7 @@ from typing import Callable, Optional
 import sounddevice as sd
 
 from nova_action_router import OFFLINE_VOICE_PHRASES
+from nova_voice_control import VOICE_CONTROL_PHRASES
 
 _SHARED_VOSK_MODEL = None
 _SHARED_VOSK_LOCK = threading.Lock()
@@ -61,7 +62,8 @@ class WakeWordListener:
                 if _SHARED_VOSK_MODEL is None:
                     _SHARED_VOSK_MODEL = vosk.Model(model_name="vosk-model-small-en-us-0.15")
                 self._model = _SHARED_VOSK_MODEL
-            grammar = json.dumps(OFFLINE_VOICE_PHRASES)
+            combined_phrases = list(dict.fromkeys(list(OFFLINE_VOICE_PHRASES) + list(VOICE_CONTROL_PHRASES)))
+            grammar = json.dumps(combined_phrases)
             self._recognizer = vosk.KaldiRecognizer(self._model, 16000, grammar)
             return True
         except Exception:

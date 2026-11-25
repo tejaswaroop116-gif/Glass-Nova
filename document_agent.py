@@ -257,14 +257,13 @@ def analyze_document(path: Optional[str] = None,
     if not permissions.request_permission("document_access", action_desc, {"path": str(target)}):
         return {
             "ok": False,
+            "verified": False,
             "message": f"Permission to access document '{target.name}' was denied.",
             "permission_denied": True
         }
 
     try:
         content_info = extract_pdf_content(target)
-        client = get_client()
-
         headings_block = ""
         if content_info.get("headings"):
             headings_block = f"Detected Module / Unit / Chapter Headings Across All Pages:\n{content_info['headings']}\n\n"
@@ -277,21 +276,6 @@ def analyze_document(path: Optional[str] = None,
             f"Full Extracted Text Across Pages:\n{content_info['text'][:140000]}"
         )
 
-        text_part = types.Part.from_text(text=prompt)
-        parts_with_pdf = None
-        if target.suffix.lower() == ".pdf":
-            try:
-                fsize = target.stat().st_size
-                if 100 < fsize <= 20 * 1024 * 1024:
-                    pdf_bytes = target.read_bytes()
-                    if pdf_bytes.startswith(b"%PDF-"):
-                        parts_with_pdf = [
-                            types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
-                            text_part
-                        ]
-            except Exception:
-                parts_with_pdf = None
-
         system_instruction = (
             "You are Nova's academic and document analysis specialist. "
             "You have full access to the ENTIRE PDF document across all pages (both the native PDF pages and the extracted text). "
@@ -302,16 +286,49 @@ def analyze_document(path: Optional[str] = None,
             "Explain technical diagrams, formulas, or concepts step by step."
         )
 
-        models = get_vision_models()
-        response = None
-        last_err = None
-        for m_name in models:
-            # Try with native PDF bytes + extracted text first (handles scanned/image pages & tables across the whole PDF)
-            if parts_with_pdf is not None:
+        answer = ""
+        engine = "gemini"
+        try:
+            client = get_client()
+            text_part = types.Part.from_text(text=prompt)
+            parts_with_pdf = None
+            if target.suffix.lower() == ".pdf":
+                try:
+                    fsize = target.stat().st_size
+                    if 100 < fsize <= 20 * 1024 * 1024:
+                        pdf_bytes = target.read_bytes()
+                        if pdf_bytes.startswith(b"%PDF-"):
+                            parts_with_pdf = [
+                                types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
+                                text_part
+                            ]
+                except Exception:
+                    parts_with_pdf = None
+
+            models = get_vision_models()
+            response = None
+            last_err = None
+            for m_name in models:
+                if parts_with_pdf is not None:
+                    try:
+                        response = client.models.generate_content(
+                            model=m_name,
+                            contents=parts_with_pdf,
+                            config=types.GenerateContentConfig(
+                                system_instruction=system_instruction,
+                                temperature=0.2,
+                                max_output_tokens=2048
+                            )
+                        )
+                        remember_working_vision_model(m_name)
+                        break
+                    except Exception as e:
+                        last_err = e
+
                 try:
                     response = client.models.generate_content(
                         model=m_name,
-                        contents=parts_with_pdf,
+                        contents=[text_part],
                         config=types.GenerateContentConfig(
                             system_instruction=system_instruction,
                             temperature=0.2,
@@ -322,28 +339,49 @@ def analyze_document(path: Optional[str] = None,
                     break
                 except Exception as e:
                     last_err = e
+                    continue
 
-            # Fallback to extracted text + headings index
+            if response is None:
+                raise last_err or RuntimeError("Online document analysis failed.")
+            answer = (response.text or "").strip()
+        except Exception:
+            # Offline fallback: use local Ollama with bounded 4 GB VRAM-safe context, or extractive local summary
+            extracted_txt = (content_info.get("text") or "").strip()
+            if not extracted_txt:
+                raise RuntimeError(f"Could not extract readable text from '{target.name}' while offline.")
+            local_prompt = (
+                f"Document Title: {target.name} ({content_info['total_pages']} pages)\n"
+                f"User Request: {query}\n\n"
+                f"{headings_block}"
+                f"Extracted Text (truncated for local 4 GB VRAM context):\n{extracted_txt[:9500]}"
+            )
             try:
-                response = client.models.generate_content(
-                    model=m_name,
-                    contents=[text_part],
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_instruction,
+                from nova_offline_ai import OllamaClient
+                ol = OllamaClient()
+                if ol.is_available(timeout=1.0) and ol.select_best_model(vision=False):
+                    ol_res = ol.chat(
+                        messages=[
+                            {"role": "system", "content": system_instruction},
+                            {"role": "user", "content": local_prompt},
+                        ],
                         temperature=0.2,
-                        max_output_tokens=2048
+                        num_ctx=4096,
                     )
-                )
-                remember_working_vision_model(m_name)
-                break
-            except Exception as e:
-                last_err = e
-                continue
+                    if ol_res.get("ok") and ol_res.get("content"):
+                        answer = str(ol_res["content"]).strip()
+                        engine = f"ollama:{ol_res.get('model', 'local')}"
+            except Exception:
+                pass
 
-        if response is None:
-            raise last_err or RuntimeError("Document analysis failed across all models.")
+            if not answer:
+                # Pure local extractive summary if neither Gemini nor Ollama is available
+                engine = "local_extractive"
+                h_summary = f"\nDetected Headings:\n{content_info['headings']}\n" if content_info.get("headings") else ""
+                answer = (
+                    f"[Offline Local Document Reader] {target.name} ({content_info['total_pages']} pages)."
+                    f"{h_summary}\nExcerpt:\n{extracted_txt[:1800]}"
+                ).strip()
 
-        answer = (response.text or "").strip()
         if not answer:
             answer = f"I extracted the content from {target.name}, but could not generate a summary."
 
@@ -358,6 +396,8 @@ def analyze_document(path: Optional[str] = None,
 
         return {
             "ok": True,
+            "verified": True,
+            "engine": engine,
             "message": answer,
             "file_name": target.name,
             "total_pages": content_info["total_pages"],
@@ -367,5 +407,6 @@ def analyze_document(path: Optional[str] = None,
     except Exception as e:
         return {
             "ok": False,
+            "verified": False,
             "message": f"Failed to analyze document {target.name}: {e}"
         }

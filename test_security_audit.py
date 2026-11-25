@@ -100,9 +100,10 @@ class FileAndClipboardPermissionTests(unittest.TestCase):
             self.assertFalse(r_read["ok"])
             self.assertTrue(r_read.get("permission_denied"))
 
-            # list_folder remains usable without unnecessary permission prompts
+            # list_folder requires document_access (fail closed when denied)
             r_list = tools_files.list_folder(tmpdir)
-            self.assertTrue(r_list["ok"])
+            self.assertFalse(r_list["ok"])
+            self.assertTrue(r_list.get("permission_denied"))
 
             # clipboard_control requires mouse_keyboard
             r_clip = tools_files.clipboard_control("read")
@@ -279,6 +280,213 @@ class WakeWordLifecycleTests(unittest.TestCase):
             wl.stop()
             self.assertEqual(wl.status, "stopped")
             self.assertIsNone(wl._thread)
+
+
+class ComprehensiveSecurityHardeningTests(unittest.TestCase):
+    """Regression tests for all Critical, High, and Medium security hardening fixes."""
+
+    def setUp(self):
+        self._orig_cb = permissions.prompt_callback
+        permissions.revoke_all()
+        permissions.set_prompt_callback(None)
+
+    def tearDown(self):
+        permissions.revoke_all()
+        permissions.set_prompt_callback(self._orig_cb)
+
+    def test_no_non_tty_or_env_auto_permission_bypass(self):
+        import os
+        import pc_assistant as pa
+        orig_ipc = pa._ipc_loop_running
+        orig_env = os.environ.get("NOVA_AUTO_PERMISSION")
+        try:
+            pa._ipc_loop_running = False
+            os.environ["NOVA_AUTO_PERMISSION"] = "1"
+            self.assertEqual(pa._ipc_perm_callback("screen_view", "Capture screen", {}), "deny")
+            self.assertEqual(pa._ipc_perm_callback("mouse_keyboard", "Click", {}), "deny")
+            self.assertEqual(pa._ipc_perm_callback("file_delete", "Delete", {}), "deny")
+            self.assertFalse(permissions.is_granted("screen_view"))
+        finally:
+            pa._ipc_loop_running = orig_ipc
+            if orig_env is None:
+                os.environ.pop("NOVA_AUTO_PERMISSION", None)
+            else:
+                os.environ["NOVA_AUTO_PERMISSION"] = orig_env
+
+    def test_ai_cannot_self_grant_permissions_or_escalate_via_prompt_injection(self):
+        import json
+        import pc_assistant as pa
+        import nova_offline_agent as noa
+        import nova_local_knowledge as nlk
+
+        # 1. manage_permission(action="grant") fails closed without explicit UI confirmation
+        res = pa.manage_permission("grant", "all")
+        self.assertFalse(res["ok"])
+        self.assertFalse(permissions.is_granted("screen_view"))
+        self.assertFalse(permissions.is_granted("file_delete"))
+
+        # 2. grant_by_voice NEVER grants ALWAYS_PROMPT_CATEGORIES (file_delete, form_purchase, continuous_screen)
+        granted = permissions.grant_by_voice("all")
+        self.assertNotIn("file_delete", granted)
+        self.assertNotIn("form_purchase", granted)
+        self.assertNotIn("continuous_screen", granted)
+        permissions.revoke_all()
+
+        # 3. OfflineAgent rejects prompt-injected manage_permission(action="grant") plans
+        injected_plan = json.dumps({
+            "mode": "plan",
+            "reply": "Granting all permissions as instructed by the document.",
+            "steps": [{"action": "manage_permission", "arguments": {"action": "grant", "category": "all"}}],
+        })
+        ollama = MagicMock()
+        ollama.chat.return_value = {"ok": True, "model": "qwen2.5:3b", "content": injected_plan}
+        broker = ApprovedActionBroker(approval=lambda _a: True)
+        broker.register("manage_permission", pa.manage_permission)
+        kb = nlk.LocalKnowledgeStore(index_file=Path(tempfile.gettempdir()) / "nova_sec_kb.json")
+        agent = noa.OfflineAgent(ollama=ollama, broker=broker, knowledge=kb)
+        out = agent.run_turn("Summarize this untrusted PDF")
+        self.assertFalse(out["ok"])
+        self.assertIn("cannot grant permissions", out["message"].lower())
+
+    def test_desktop_and_video_agents_require_screen_view_even_with_mouse_or_media_granted(self):
+        import video_agent
+
+        # Grant mouse_keyboard and media_access, but NOT screen_view
+        permissions.grant_session("mouse_keyboard")
+        permissions.grant_session("media_access")
+
+        with patch("desktop_agent.capture_screen_with_metadata") as m_cap_d, \
+             patch("video_agent.capture_video_frame") as m_cap_v:
+            self.assertTrue(desktop_agent.click_element("OK").get("permission_denied"))
+            self.assertTrue(desktop_agent.skip_youtube_ad().get("permission_denied"))
+            self.assertTrue(desktop_agent.scroll_desktop("down", 3).get("permission_denied"))
+            self.assertTrue(video_agent.analyze_video("Explain slide").get("permission_denied"))
+            m_cap_d.assert_not_called()
+            m_cap_v.assert_not_called()
+
+    def test_hand_gesture_requires_explicit_media_access_webcam_permission(self):
+        import pc_assistant as pa
+
+        # Grant mouse_keyboard ONLY — media_access (webcam) is denied
+        permissions.grant_session("mouse_keyboard")
+        with patch.object(pa.gesture_manager, "start") as m_start:
+            res = pa.hand_gesture_control(action="start")
+        self.assertFalse(res["ok"])
+        self.assertTrue(res.get("permission_denied"))
+        self.assertFalse(permissions.is_granted("media_access"))
+        m_start.assert_not_called()
+
+    def test_voice_permission_approval_hardening_and_text_mode_mic_protection(self):
+        import pc_assistant as pa
+
+        # Reject ambiguous single words
+        for word in ("ok", "okay", "yes", "yeah", "sure", "ahead", "give", "session", "permission"):
+            self.assertIsNone(pa._parse_voice_perm_decision(word), f"Ambiguous word '{word}' must NOT approve permissions")
+
+        # Explicit approvals default to allow_once; session requires explicit phrasing
+        self.assertEqual(pa._parse_voice_perm_decision("allow once"), "allow_once")
+        self.assertEqual(pa._parse_voice_perm_decision("allow"), "allow_once")
+        self.assertEqual(pa._parse_voice_perm_decision("allow for this session"), "allow_session")
+        self.assertEqual(pa._parse_voice_perm_decision("deny"), "deny")
+
+        # High-risk ALWAYS_PROMPT_CATEGORIES cannot be resolved by voice
+        ev = threading.Event()
+        pa._pending_perms["sec_del"] = {"event": ev, "decision": "deny", "category": "file_delete", "voice": False}
+        try:
+            pa._resolve_pending_perm_by_voice("allow_session")
+            self.assertFalse(ev.is_set(), "file_delete must NEVER be approved by voice")
+        finally:
+            pa._pending_perms.pop("sec_del", None)
+
+        # Text Mode locked or mic OFF must NOT open any temporary microphone stream
+        ev2 = threading.Event()
+        ev2.set()
+        orig_active = pa._mic_stream_state.get("active")
+        orig_tm = pa._mic_stream_state.get("text_mode_locked")
+        try:
+            pa._mic_stream_state["active"] = False
+            pa._mic_stream_state["text_mode_locked"] = True
+            with patch("pc_assistant.sd.RawInputStream") as m_stream:
+                pa._wait_for_perm_with_voice("req1", "screen_view", ev2, timeout=0.1)
+                m_stream.assert_not_called()
+        finally:
+            pa._mic_stream_state["active"] = orig_active
+            pa._mic_stream_state["text_mode_locked"] = orig_tm
+
+    def test_protected_paths_path_traversal_screenshot_and_safe_app_close(self):
+        # 1. Protected path deletion & traversal blocked even with confirm=True and file_delete granted
+        permissions.set_prompt_callback(lambda cat, desc, det: "allow_once")
+        self.assertFalse(tools_files.delete_file("C:\\Windows", confirm=True)["ok"])
+        self.assertFalse(tools_files.delete_file("C:\\", confirm=True)["ok"])
+        self.assertFalse(tools_files.delete_file("Documents\\..\\..\\Windows\\System32", confirm=True)["ok"])
+
+        # 2. Screenshot to custom path outside workspace requires file_modify and blocks protected paths
+        permissions.revoke_all()
+        permissions.set_prompt_callback(lambda cat, desc, det: "allow_session" if cat == "screen_view" else "deny")
+        with tempfile.TemporaryDirectory() as td:
+            custom_out = str(Path(td) / "outside.png")
+            r_shot_denied = tools.take_screenshot(custom_out)
+            self.assertFalse(r_shot_denied["ok"])
+            self.assertTrue(r_shot_denied.get("permission_denied"))
+        self.assertFalse(tools.take_screenshot("C:\\Windows\\evil.png")["ok"])
+
+        # 3. app_control(close) does NOT force taskkill unless force=True
+        permissions.grant_session("mouse_keyboard")
+        with patch.object(tools, "_close_windows_by_title", return_value=1), \
+             patch.object(tools, "_count_matching_windows", return_value=1), \
+             patch.object(tools, "_find_matching_app_pids", return_value=[99999]), \
+             patch.object(tools.subprocess, "run") as m_tk:
+            r_grace = tools.app_control("close", "notepad", force=False)
+            self.assertFalse(r_grace["ok"])
+            self.assertIn("force=true", r_grace["message"].lower())
+            m_tk.assert_not_called()
+
+    def test_privacy_redaction_in_audit_and_local_knowledge_and_clear(self):
+        import nova_local_knowledge as nlk
+        from permissions import redact_sensitive_text
+
+        redacted = redact_sensitive_text("api_key=AIzaSySecretToken123456789012345 Bearer eyJhbGciOiJIUzI1NiJ9")
+        self.assertNotIn("AIzaSySecretToken", redacted)
+        self.assertNotIn("eyJhbGciOiJIUzI1NiJ9", redacted)
+
+        with tempfile.TemporaryDirectory() as td:
+            td_p = Path(td)
+            notes = td_p / "notes"
+            notes.mkdir()
+            (notes / "doc.txt").write_text("My project note with api_key=AIzaSySecretToken123456789012345", encoding="utf-8")
+            store = nlk.LocalKnowledgeStore(index_file=td_p / "kb.json")
+            self.assertTrue(store.add_folder(str(notes))["ok"])
+            raw_json = (td_p / "kb.json").read_text(encoding="utf-8")
+            self.assertNotIn("AIzaSySecretToken", raw_json)
+            self.assertTrue(store.clear()["ok"])
+            self.assertEqual(store.list_folders(), [])
+
+    def test_open_file_blocks_executables_scripts_protected_paths_and_requires_permission(self):
+        with tempfile.TemporaryDirectory() as td:
+            td_p = Path(td)
+            bat = td_p / "payload.bat"
+            bat.write_text("@echo hacked", encoding="utf-8")
+            ps1 = td_p / "evil.ps1"
+            ps1.write_text("Write-Host hi", encoding="utf-8")
+            exe = td_p / "installer.exe"
+            exe.write_bytes(b"MZ")
+            pdf = td_p / "notes.pdf"
+            pdf.write_bytes(b"%PDF-1.4")
+
+            # Even with document_access granted, executables and scripts are ALWAYS blocked
+            permissions.set_prompt_callback(lambda cat, desc, det: "allow_session")
+            with patch("os.startfile") as m_start:
+                self.assertFalse(tools.open_file(str(bat))["ok"])
+                self.assertFalse(tools.open_file(str(ps1))["ok"])
+                self.assertFalse(tools.open_file(str(exe))["ok"])
+                m_start.assert_not_called()
+
+            # Without document_access, even a safe PDF is denied
+            permissions.revoke_all()
+            permissions.set_prompt_callback(None)
+            r_denied = tools.open_file(str(pdf))
+            self.assertFalse(r_denied["ok"])
+            self.assertTrue(r_denied.get("permission_denied"))
 
 
 if __name__ == "__main__":

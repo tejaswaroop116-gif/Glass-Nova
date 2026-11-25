@@ -58,21 +58,24 @@ def analyze_video(query: str = "Explain what the teacher or video is explaining.
     if not permissions.request_permission("media_access", action_desc, {"window": active_window}):
         return {
             "ok": False,
+            "verified": False,
             "message": "Media content observation permission was denied.",
+            "permission_denied": True
+        }
+    if not permissions.request_permission("screen_view", f"Capture screen frame for video analysis in '{active_window}'", {"window": active_window}):
+        return {
+            "ok": False,
+            "verified": False,
+            "message": "Screen viewing permission was denied.",
             "permission_denied": True
         }
 
     try:
-        client = get_client()
-        parts = []
-
+        captured_frames: List[bytes] = []
         if multi_frame:
-            frames = sample_video_frames(samples=2, interval_seconds=1.2)
-            for idx, frame_bytes in enumerate(frames):
-                parts.append(types.Part.from_bytes(data=frame_bytes, mime_type="image/jpeg"))
+            captured_frames = sample_video_frames(samples=2, interval_seconds=1.2)
         else:
-            frame_bytes = capture_video_frame()
-            parts.append(types.Part.from_bytes(data=frame_bytes, mime_type="image/jpeg"))
+            captured_frames = [capture_video_frame()]
 
         system_instruction = (
             "You are Nova's video and lecture understanding specialist. "
@@ -87,36 +90,68 @@ def analyze_video(query: str = "Explain what the teacher or video is explaining.
         user_prompt = f"User Question: {query}\nActive Window: {active_window}"
         if timestamp_hint:
             user_prompt += f"\nTimestamp hint: {timestamp_hint}"
-        parts.append(types.Part.from_text(text=user_prompt))
 
-        models = get_vision_models()
-        response = None
-        last_err = None
-        for m_name in models:
-            try:
-                response = client.models.generate_content(
-                    model=m_name,
-                    contents=parts,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_instruction,
-                        temperature=0.3,
-                        max_output_tokens=800
+        answer = ""
+        engine = "gemini"
+        try:
+            client = get_client()
+            parts = [types.Part.from_bytes(data=fb, mime_type="image/jpeg") for fb in captured_frames]
+            parts.append(types.Part.from_text(text=user_prompt))
+
+            models = get_vision_models()
+            response = None
+            last_err = None
+            for m_name in models:
+                try:
+                    response = client.models.generate_content(
+                        model=m_name,
+                        contents=parts,
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_instruction,
+                            temperature=0.3,
+                            max_output_tokens=800
+                        )
                     )
-                )
-                remember_working_vision_model(m_name)
-                break
-            except Exception as e:
-                last_err = e
-                continue
-        if response is None:
-            raise last_err or RuntimeError("Video analysis failed across all models.")
+                    remember_working_vision_model(m_name)
+                    break
+                except Exception as e:
+                    last_err = e
+                    continue
+            if response is None:
+                raise last_err or RuntimeError("Online video analysis failed across all models.")
+            answer = (response.text or "").strip()
+        except Exception as online_err:
+            # Offline fallback: use local Ollama vision model or local OCR on the captured frame
+            from nova_offline_ai import OllamaClient
+            local_res = OllamaClient().analyze_image_local(
+                image_bytes=captured_frames[-1],
+                question=f"{user_prompt}\nExplain the visible video frame, slide, or whiteboard accurately without guessing.",
+                require_screen_permission=False,
+            )
+            if local_res.get("ok") and local_res.get("message"):
+                answer = str(local_res["message"]).strip()
+                engine = local_res.get("model") or local_res.get("engine") or "local_vision"
+            else:
+                return {
+                    "ok": False,
+                    "verified": False,
+                    "message": (
+                        f"Video analysis could not run online ({online_err}) and no local vision/OCR model is available offline. "
+                        "Install a compact local vision model (e.g. 'ollama pull moondream') or reconnect to Gemini."
+                    ),
+                }
 
-        answer = (response.text or "").strip()
         if not answer:
-            answer = "I observed the video frame, but could not detect distinct slide or lecture notes."
+            return {
+                "ok": False,
+                "verified": False,
+                "message": "I observed the video frame, but could not extract any recognizable slide, whiteboard, or caption content.",
+            }
 
         return {
             "ok": True,
+            "verified": True,
+            "engine": engine,
             "message": answer,
             "active_window": active_window,
             "query": query
@@ -124,5 +159,6 @@ def analyze_video(query: str = "Explain what the teacher or video is explaining.
     except Exception as e:
         return {
             "ok": False,
+            "verified": False,
             "message": f"Video analysis failed: {e}"
         }

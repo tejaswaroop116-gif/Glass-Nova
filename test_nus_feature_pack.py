@@ -451,11 +451,16 @@ class ActionRouterAndBrokerTests(unittest.TestCase):
             self.assertTrue(mgr.execute_offline_action_sync("hello"))
             self.assertTrue(mgr.execute_offline_action_sync("what time is it"))
             self.assertTrue(mgr.execute_offline_action_sync("calculate 25 * 4"))
-            # Offline permission grant & revoke for hand gesture
+            # Offline permission grant (via explicit mocked UI approval) & revoke for hand gesture
             pc_assistant.permissions.revoke_all()
-            self.assertTrue(mgr.execute_offline_action_sync("give permission for hand gesture"))
-            self.assertTrue(pc_assistant.permissions.is_granted("mouse_keyboard"))
-            self.assertTrue(pc_assistant.permissions.is_granted("media_access"))
+            orig_cb = pc_assistant.permissions.prompt_callback
+            pc_assistant.permissions.set_prompt_callback(lambda cat, desc, det: "allow_session")
+            try:
+                self.assertTrue(mgr.execute_offline_action_sync("give permission for hand gesture"))
+                self.assertTrue(pc_assistant.permissions.is_granted("mouse_keyboard"))
+                self.assertTrue(pc_assistant.permissions.is_granted("media_access"))
+            finally:
+                pc_assistant.permissions.set_prompt_callback(orig_cb)
             self.assertTrue(mgr.execute_offline_action_sync("revoke all permissions"))
             self.assertFalse(pc_assistant.permissions.is_granted("mouse_keyboard"))
             # Offline companion & Nova self-close command

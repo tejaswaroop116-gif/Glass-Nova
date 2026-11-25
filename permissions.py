@@ -4,9 +4,27 @@ Manages separate permission categories for screen viewing, document access,
 media access, mouse/keyboard control, file operations, and sensitive actions.
 Supports Allow Once, Allow for Session, Deny, and instant Revocation.
 """
-import os, json, threading, time
+import os, json, re, threading, time
 from pathlib import Path
 from typing import Callable, Optional, Dict, Any, List
+
+ALWAYS_PROMPT_CATEGORIES = frozenset({"file_delete", "form_purchase", "continuous_screen"})
+
+_SECRET_REDACTION_PATTERNS = (
+    (re.compile(r"(?i)(api[_-]?key|token|secret|password|passwd|authorization)\s*[:=]\s*['\"]?[^\s'\",;}{]+"), r"\1=[REDACTED]"),
+    (re.compile(r"(?i)Bearer\s+[A-Za-z0-9\-._~+/]+=*"), "Bearer [REDACTED]"),
+    (re.compile(r"AIza[0-9A-Za-z\-_]{20,}"), "[REDACTED_API_KEY]"),
+    (re.compile(r"sk-[A-Za-z0-9]{20,}"), "[REDACTED_KEY]"),
+    (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"), "[REDACTED_PRIVATE_KEY]"),
+)
+
+
+def redact_sensitive_text(text: str) -> str:
+    """Strip common API keys, tokens, passwords, and private key blocks before writing logs/indexes."""
+    out = str(text or "")
+    for pat, repl in _SECRET_REDACTION_PATTERNS:
+        out = pat.sub(repl, out)
+    return out
 
 CATEGORIES = {
     "screen_view": {
@@ -181,15 +199,15 @@ class PermissionManager:
         return matched
 
     def grant_by_voice(self, category: str, scope: str = "session"):
-        """Grant permission by voice command for a specific category, phrase, or 'all'."""
+        """Grant permission for a specific category or phrase (NEVER grants high-risk always_prompt categories)."""
         granted = []
         with self._lock:
-            targets = self._resolve_categories(category)
+            targets = [t for t in self._resolve_categories(category) if t not in ALWAYS_PROMPT_CATEGORIES]
             for t in targets:
                 self.session_grants[t] = True
                 granted.append(t)
             if granted:
-                label = "all" if len(granted) == len(CATEGORIES) else ",".join(granted)
+                label = "all_safe" if len(granted) == (len(CATEGORIES) - len(ALWAYS_PROMPT_CATEGORIES)) else ",".join(granted)
                 self._record_audit(label, f"Granted by user voice command ({category})", f"voice_{scope}")
         return granted
 
@@ -259,11 +277,21 @@ class PermissionManager:
         with self._lock:
             return {k: self.session_grants.get(k, False) for k in CATEGORIES}
 
+    def clear_audit_log(self) -> None:
+        """Clear all stored permission audit entries from memory and disk."""
+        with self._lock:
+            self.audit_log.clear()
+            try:
+                if _AUDIT_FILE.exists():
+                    _AUDIT_FILE.unlink(missing_ok=True)
+            except Exception:
+                pass
+
     def _record_audit(self, category: str, action: str, outcome: str):
         entry = {
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "category": category,
-            "action": action,
+            "action": redact_sensitive_text(action)[:300],
             "outcome": outcome
         }
         self.audit_log.append(entry)
@@ -271,7 +299,9 @@ class PermissionManager:
             self.audit_log = self.audit_log[-200:]
         try:
             _AUDIT_FILE.parent.mkdir(parents=True, exist_ok=True)
-            _AUDIT_FILE.write_text(json.dumps(self.audit_log, indent=2, ensure_ascii=False), encoding="utf-8")
+            tmp_file = _AUDIT_FILE.with_suffix(".json.tmp")
+            tmp_file.write_text(json.dumps(self.audit_log, indent=2, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp_file, _AUDIT_FILE)
         except Exception:
             pass
 

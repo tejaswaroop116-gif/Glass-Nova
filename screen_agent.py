@@ -481,8 +481,22 @@ def analyze_region_bytes(
         "Provide clear, concise visual guidance about this selected region only. "
         "Do not reveal or transcribe passwords, tokens, or payment secrets."
     )
-    client = get_client()
-    return generate_screen_vision(client, image_bytes, prompt, active_window)
+    try:
+        client = get_client()
+        return generate_screen_vision(client, image_bytes, prompt, active_window)
+    except Exception as online_err:
+        try:
+            from nova_offline_ai import OllamaClient
+            local_res = OllamaClient().analyze_image_local(
+                image_bytes=image_bytes,
+                question=f"{prompt}\nFocused window: {active_window}",
+                require_screen_permission=False,
+            )
+            if local_res.get("ok") and local_res.get("message"):
+                return str(local_res["message"])
+        except Exception:
+            pass
+        raise online_err
 
 
 def compute_visual_change(
@@ -606,7 +620,7 @@ def analyze_screen(query: str = "Explain what is on the screen and identify key 
                    continuous: bool = False) -> Dict[str, Any]:
     """
     Main screen observation entrypoint.
-    Checks permissions, captures the screen, and sends to Gemini vision.
+    Checks permissions, captures the screen, and sends to Gemini vision (with automatic local Ollama vision/OCR fallback when offline).
     """
     category = "continuous_screen" if continuous else "screen_view"
     action_desc = f"Inspect active screen: '{query}'"
@@ -614,6 +628,7 @@ def analyze_screen(query: str = "Explain what is on the screen and identify key 
     if not permissions.request_permission(category, action_desc):
         return {
             "ok": False,
+            "verified": False,
             "message": "Screen access permission was denied by the user.",
             "permission_denied": True
         }
@@ -621,14 +636,31 @@ def analyze_screen(query: str = "Explain what is on the screen and identify key 
     try:
         active_window = get_active_window_title()
         image_bytes = capture_screen_jpeg()
-        client = get_client()
+        try:
+            client = get_client()
+            answer = generate_screen_vision(client, image_bytes, query, active_window)
+            engine = "gemini"
+        except Exception as online_err:
+            # Offline fallback: try local Ollama vision model or local OCR
+            from nova_offline_ai import OllamaClient
+            local_res = OllamaClient().analyze_image_local(
+                image_bytes=image_bytes,
+                question=f"User question: {query}\nFocused window: {active_window}",
+                require_screen_permission=False,
+            )
+            if local_res.get("ok"):
+                answer = str(local_res.get("message") or "")
+                engine = local_res.get("model") or local_res.get("engine") or "local_vision"
+            else:
+                raise RuntimeError(f"{online_err} | {local_res.get('message', 'Offline vision unavailable')}")
 
-        answer = generate_screen_vision(client, image_bytes, query, active_window)
         if not answer:
             answer = "I looked at your screen, but could not discern any specific text or UI details."
 
         return {
             "ok": True,
+            "verified": True,
+            "engine": engine,
             "message": answer,
             "active_window": active_window,
             "query": query
@@ -636,5 +668,6 @@ def analyze_screen(query: str = "Explain what is on the screen and identify key 
     except Exception as e:
         return {
             "ok": False,
+            "verified": False,
             "message": f"Screen analysis failed: {e}"
         }

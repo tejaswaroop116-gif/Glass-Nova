@@ -19,7 +19,7 @@
 - [Requirements & Compatibility](#requirements--compatibility)
 - [Installation & Quick Start](#installation--quick-start)
 - [API Key Setup](#api-key-setup)
-- [Offline Local Mode](#offline-local-mode)
+- [Offline Local Mode & Local AI (Ollama)](#offline-local-mode--local-ai-ollama)
 - [Security, Privacy & Permissions](#security-privacy--permissions)
 - [Testing](#testing)
 - [Troubleshooting](#troubleshooting)
@@ -73,6 +73,7 @@ Glass Nova runs as a two-process desktop architecture: a frameless PySide6 glass
 | **Routing & Safety** | `nova_action_router.py`, `permissions.py` | Allow-listed `ACTION_SCHEMAS`, regex/structural argument validation, `ApprovedActionBroker`, fail-closed permissions |
 | **Desktop & Media Agents** | `desktop_agent.py`, `desktop_agent_browser.py`, `screen_agent.py`, `document_agent.py`, `video_agent.py`, `hand_gesture.py` | UIAutomation, browser/YouTube controls, multi-monitor capture, PDF/video analysis, gesture mouse |
 | **System & File Tools** | `tools.py`, `tools_state.py`, `tools_files.py` | App/window/volume/brightness tools, safe AST calculator, file/folder tools, native Windows clipboard, local tasks & memories |
+| **Offline AI & Knowledge** | `nova_offline_ai.py`, `nova_offline_agent.py`, `nova_local_knowledge.py` | Local Ollama runtime (4 GB VRAM-safe), rolling context manager, bounded offline agent, opt-in local knowledge index, AST-restricted Python sandbox |
 | **Guidance & Workflows** | `nova_screen_pointing.py`, `nova_walkthrough.py`, `nova_workflows.py` | Region pointing selector, step-by-step walkthroughs, semantic workflow recorder & player |
 
 ---
@@ -131,14 +132,26 @@ Outputs a bundled application to `dist\GlassNova\GlassNova.exe`.
 
 ---
 
-## Offline Local Mode
+## Offline Local Mode & Local AI (Ollama)
 
-When offline or without an API key, Glass Nova handles common commands locally by chat or offline Vosk voice:
-- **Nova & Companion**: `"close yourself"`, `"minimize nova"`, `"turn on bot"`, `"turn off bot"`, `"toggle bot"`
-- **Permissions**: `"give permission for hand gesture"`, `"allow mouse"`, `"allow screen"`, `"revoke all permissions"`, `"check permissions"`
-- **Hand Gestures & Mic**: `"start/stop/pause/resume hand gesture"`, `"show/hide hand preview"`, `"enable auto nearest"`, `"set mic sensitivity to 70"`
-- **Apps & Folders**: `"open calculator"`, `"close notepad"`, `"open downloads"`, `"list desktop"`, `"create folder demo on desktop"`
-- **System & Productivity**: `"set volume to 50"`, `"mute"`, `"brightness up"`, `"take screenshot"`, `"system status"`, `"what time is it"`, `"calculate 25 * 4"`, `"add task ..."`, `"remember ... is ..."`, `"read clipboard"`, `"new tab"`, `"close tab"`, `"scroll down"`
+When offline or without an API key, Glass Nova automatically switches into **Hybrid Offline Mode**:
+
+1. **Instant Deterministic Commands (0ms, no model required)** via chat or offline Vosk voice:
+   - **Nova & Companion**: `"close yourself"`, `"minimize nova"`, `"turn on bot"`, `"turn off bot"`, `"toggle bot"`
+   - **Permissions**: `"give permission for hand gesture"`, `"allow mouse"`, `"allow screen"`, `"revoke all permissions"`, `"check permissions"`
+   - **Hand Gestures & Mic**: `"start/stop/pause/resume hand gesture"`, `"show/hide hand preview"`, `"enable auto nearest"`, `"set mic sensitivity to 70"`
+   - **Apps & Folders**: `"open calculator"`, `"close notepad"`, `"open downloads"`, `"list desktop"`, `"create folder demo on desktop"`, `"search files for <name>"`
+   - **System & Productivity**: `"set volume to 50"`, `"mute"`, `"brightness up"`, `"take screenshot"`, `"system status"`, `"what time is it"`, `"calculate 25 * 4"`, `"add task ..."`, `"remember ... is ..."`, `"read clipboard"`, `"new tab"`, `"close tab"`, `"scroll down"`
+   - **Offline Diagnostics & Local Knowledge**: `"offline capabilities"`, `"list indexed folders"`, `"index folder <path>"`, `"search local knowledge for <query>"`, `"stop task"`
+2. **Local Ollama AI & Bounded Offline Agent** (when [Ollama](https://ollama.com/) is running locally):
+   - Supports local Q&A, coding assistance, reasoning, summarization, and bounded multi-step Windows plans routed through `ApprovedActionBroker` (max 5 steps, fail-closed permissions, instant `"stop task"` cancellation).
+   - Tuned for **16 GB RAM + 4 GB VRAM GPUs** (e.g., RTX 3050 Laptop): single-model VRAM residency (unloads previous model on switch), `num_ctx=4096` rolling context compression, and automatic CPU fallback (`"offline cpu mode"` / `"offline gpu mode"`).
+   - Recommended lightweight models for 4 GB VRAM:
+     ```powershell
+     ollama pull qwen2.5:3b      # fast general reasoning & coding (~2.2 GB VRAM)
+     ollama pull moondream       # optional local vision model (~1.7 GB VRAM)
+     ```
+   - **Opt-In Local Knowledge**: Never auto-indexes private folders. Users explicitly choose folders (`"index folder <path>"`) to search `.txt`, `.md`, `.py`, `.json`, `.csv`, `.pdf`, and `.docx` locally.
 
 ---
 
@@ -156,14 +169,16 @@ Glass Nova is designed around **fail-closed permission enforcement**:
 
 ## Testing
 
-Glass Nova includes 5 automated test suites verified on every push via GitHub Actions (`.github/workflows/tests.yml`):
+Glass Nova includes 7 automated test suites verified on every push via GitHub Actions (`.github/workflows/tests.yml`):
 
 ```powershell
 # Syntax check across all Python modules
 .venv\Scripts\python.exe -B -c "import ast, pathlib; [ast.parse(p.read_text(encoding='utf-8'), filename=str(p)) for p in sorted(pathlib.Path('.').glob('*.py'))]; print('AST OK')"
 
-# Run all 5 test suites
+# Run automated test suites
 .venv\Scripts\python.exe -B test_security_audit.py -v
+.venv\Scripts\python.exe -B test_offline_capability.py -v
+.venv\Scripts\python.exe -B test_website.py -v
 .venv\Scripts\python.exe -B test_nus_feature_pack.py -v
 .venv\Scripts\python.exe -B test_screen_interaction.py -v
 .venv\Scripts\python.exe -B test_upgrade_integration.py

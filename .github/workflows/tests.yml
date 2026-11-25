@@ -33,6 +33,8 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           python -B test_security_audit.py -v
+          python -B test_offline_capability.py -v
+          python -B test_lifecycle_and_voice_controls.py -v
           python -B test_website.py -v
 
       - name: Run Glass Nova feature pack unit tests

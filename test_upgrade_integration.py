@@ -136,19 +136,26 @@ def test_desktop_agent():
 
     # Test safe File Manager / File Explorer close (must NEVER taskkill explorer.exe)
     import tools
+    from permissions import permissions
     from unittest.mock import patch
-    with patch.object(tools, "_close_file_explorer_windows", return_value=1) as mock_close_exp, \
-         patch.object(tools.subprocess, "run") as mock_sub_run:
-        res_fm = tools.app_control("close", "file manager")
-        assert res_fm["ok"] is True
-        res_exp = tools.app_control("close", "explorer")
-        assert res_exp["ok"] is True
-        assert mock_close_exp.call_count == 2
-        mock_sub_run.assert_not_called()
+    orig_cb = permissions.prompt_callback
+    permissions.set_prompt_callback(lambda cat, desc, det: "allow_session" if cat == "mouse_keyboard" else "deny")
+    try:
+        with patch.object(tools, "_close_file_explorer_windows", return_value=1) as mock_close_exp, \
+             patch.object(tools.subprocess, "run") as mock_sub_run:
+            res_fm = tools.app_control("close", "file manager")
+            assert res_fm["ok"] is True
+            res_exp = tools.app_control("close", "explorer")
+            assert res_exp["ok"] is True
+            assert mock_close_exp.call_count == 2
+            mock_sub_run.assert_not_called()
 
-    # Protected system processes must never be killed by app_control
-    res_prot = tools.app_control("close", "dwm.exe")
-    assert res_prot["ok"] is False and "protected" in res_prot["message"].lower()
+        # Protected system processes must never be killed by app_control
+        res_prot = tools.app_control("close", "dwm.exe")
+        assert res_prot["ok"] is False and "protected" in res_prot["message"].lower()
+    finally:
+        permissions.revoke_all()
+        permissions.set_prompt_callback(orig_cb)
 
     # Test fuzzy file resolution ('machine learning PDF' -> 'MACHINELEARNING.pdf'), open_file, and cursor click
     import tempfile
@@ -167,16 +174,24 @@ def test_desktop_agent():
         # Pronoun resolution ('it' / 'the pdf')
         assert tools._find_user_file("it") == fake_pdf
 
-        with patch("os.startfile") as mock_startfile:
-            res_open = tools.open_file("machine learning PDF")
-            assert res_open["ok"] is True
-            mock_startfile.assert_called_once_with(str(fake_pdf))
+        # Verify open_file fails closed without document_access, then succeeds with explicit permission
+        assert tools.open_file("machine learning PDF").get("permission_denied") is True
+        orig_doc_cb = permissions.prompt_callback
+        permissions.set_prompt_callback(lambda cat, desc, det: "allow_session" if cat == "document_access" else "deny")
+        try:
+            with patch("os.startfile") as mock_startfile:
+                res_open = tools.open_file("machine learning PDF")
+                assert res_open["ok"] is True
+                mock_startfile.assert_called_once_with(str(fake_pdf))
 
-        with patch.object(tools, "_resolve_app_executable", return_value=r"C:\WPS\wpspdf.exe"), \
-             patch.object(tools.subprocess, "Popen") as mock_popen:
-            res_wps = tools.open_file("it", app="WS Office")
-            assert res_wps["ok"] is True
-            mock_popen.assert_called_once_with([r"C:\WPS\wpspdf.exe", str(fake_pdf)], shell=False)
+            with patch.object(tools, "_resolve_app_executable", return_value=r"C:\WPS\wpspdf.exe"), \
+                 patch.object(tools.subprocess, "Popen") as mock_popen:
+                res_wps = tools.open_file("it", app="WS Office")
+                assert res_wps["ok"] is True
+                mock_popen.assert_called_once_with([r"C:\WPS\wpspdf.exe", str(fake_pdf)], shell=False)
+        finally:
+            permissions.revoke_all()
+            permissions.set_prompt_callback(orig_doc_cb)
 
         from document_agent import find_target_document, _should_auto_write_to_notepad
         assert find_target_document("the whole PDF") == fake_pdf
@@ -190,12 +205,18 @@ def test_desktop_agent():
     ap = AudioPlayer(lambda: None)
     ap.close()
 
-    # Test click_mouse at current cursor position without x, y
+    # Test click_mouse at current cursor position without x, y (with explicit mocked permission callback)
     import pyautogui
-    with patch.object(pyautogui, "click") as mock_click:
-        res_cur = tools.click_mouse()
-        assert res_cur["ok"] is True
-        assert mock_click.call_count == 1
+    orig_cb2 = permissions.prompt_callback
+    permissions.set_prompt_callback(lambda cat, desc, det: "allow_session" if cat == "mouse_keyboard" else "deny")
+    try:
+        with patch.object(pyautogui, "click") as mock_click:
+            res_cur = tools.click_mouse()
+            assert res_cur["ok"] is True
+            assert mock_click.call_count == 1
+    finally:
+        permissions.revoke_all()
+        permissions.set_prompt_callback(orig_cb2)
     print("Desktop agent, hand_gesture_control, play_youtube, open_file, cursor click & safe File Explorer close test passed!")
 
 def test_ui_components():
@@ -250,9 +271,11 @@ def test_ui_components():
     win._on_event({"t": "perm_voice_resolved", "id": "req_voice_1", "category": "mouse_keyboard", "decision": "allow_session"})
     assert dlg.selected_decision == "allow_session"
     from pc_assistant import _parse_voice_perm_decision
-    assert _parse_voice_perm_decision("yes allow") == "allow_session"
-    assert _parse_voice_perm_decision("give permission") == "allow_session"
+    assert _parse_voice_perm_decision("allow for this session") == "allow_session"
+    assert _parse_voice_perm_decision("give permission") == "allow_once"
     assert _parse_voice_perm_decision("allow once") == "allow_once"
+    assert _parse_voice_perm_decision("okay") is None
+    assert _parse_voice_perm_decision("yes") is None
     assert _parse_voice_perm_decision("no deny") == "deny"
 
     # Test wake-word pause and resume

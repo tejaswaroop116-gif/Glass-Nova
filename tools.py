@@ -11,7 +11,7 @@ from tools_state import (
     memory_control, task_control,
 )
 from tools_files import (
-    _clipboard_empty, _clipboard_get_text, _clipboard_set_text, _resolve_path,
+    _clipboard_empty, _clipboard_get_text, _clipboard_set_text, _is_protected_path, _resolve_path,
     calculator_operation, clipboard_control, copy_file, create_folder,
     delete_file, list_folder as _list_folder_base, move_file,
     read_text_file, rename_file, write_text_file,
@@ -364,9 +364,23 @@ def _wait_for_app_or_file_window(
     return False, proc_alive, ""
 
 
+_BLOCKED_OPEN_EXTS = frozenset({
+    ".exe", ".msi", ".msp", ".bat", ".cmd", ".com", ".ps1", ".psm1", ".vbs", ".vbe",
+    ".js", ".jse", ".wsf", ".wsh", ".scr", ".pif", ".reg", ".hta", ".cpl", ".dll",
+    ".sys", ".lnk", ".inf", ".jar", ".appx", ".msix",
+})
+_SAFE_OPEN_EXTS = frozenset({
+    ".pdf", ".txt", ".md", ".csv", ".json", ".yaml", ".yml", ".log",
+    ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".rtf", ".odt",
+    ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".svg",
+    ".mp4", ".mkv", ".avi", ".mov", ".webm", ".mp3", ".wav", ".flac", ".m4a", ".ogg",
+    ".py", ".html", ".htm", ".css",
+})
+
+
 def open_file(path: str = "", app: str = ""):
-    """Open a file, PDF, or document in its default viewer or in a specified application (such as WPS Office),
-    and verify that the viewer window or process actually opened."""
+    """Open a safe document or media file in its default viewer or a specified application (such as WPS Office).
+    Blocks executables/scripts/installers, protects system directories, and enforces document_access permission."""
     global _last_referenced_file
     _ensure_explorer_shell_running()
 
@@ -382,6 +396,19 @@ def open_file(path: str = "", app: str = ""):
     target_file = _find_user_file(raw_path)
     if target_file is None or not target_file.is_file():
         return _err(f"Could not find a file matching '{raw_path or 'the requested file'}'.")
+
+    ext = target_file.suffix.lower()
+    if ext in _BLOCKED_OPEN_EXTS:
+        return _err(f"Refusing to execute potentially unsafe file type '{ext}' ({target_file.name}) via open_file.")
+    if ext not in _SAFE_OPEN_EXTS:
+        return _err(f"Unsupported file type '{ext or '(none)'}' for open_file. Only safe document, text, code, and media files are allowed.")
+
+    prot = _is_protected_path(target_file)
+    if prot:
+        return _err(prot)
+
+    if not _check_perm("document_access", f"Open file '{target_file.name}'", {"path": str(target_file)}):
+        return _err("Document access permission was denied.", permission_denied=True)
 
     _last_referenced_file = target_file
     before_wins = _snapshot_visible_windows()
@@ -405,8 +432,8 @@ def open_file(path: str = "", app: str = ""):
                 if proc_ok:
                     return _unverified(f"Launched {raw_app} for {target_file.name}, but its viewer window could not be confirmed on screen yet.", path=str(target_file), app=raw_app)
                 return _err(f"Attempted to launch {raw_app} for {target_file.name}, but the viewer process did not stay open.")
-            except Exception:
-                pass
+            except Exception as popen_err:
+                return _err(f"Failed to launch {raw_app} for {target_file.name}: {popen_err}")
 
     # Default Windows file association launch (opens PDFs in default PDF viewer / WPS / Edge)
     try:
@@ -1165,11 +1192,14 @@ def window_control(action: str, target: str = ""):
         return _err(f"Could not control window: {e}")
 
 
-def app_control(action: str, app: str):
+def app_control(action: str, app: str, force: bool = False):
     _ensure_explorer_shell_running()
     a = (action or "").lower().strip()
     if a in ("open","start","launch"):
         return open_app(app)
+    if a in ("force_close", "force close", "kill"):
+        force = True
+        a = "close"
     try:
         if a in ("close","stop","quit","exit","close_tab","close tab"):
             app_clean = (app or "").lower().strip()
@@ -1227,8 +1257,21 @@ def app_control(action: str, app: str):
 
             # 1. Try gracefully closing matching application windows via WM_CLOSE first
             closed_wins = _close_windows_by_title(app_clean)
+            if closed_wins > 0:
+                time.sleep(0.35)
+                if _count_matching_windows(app_clean) == 0 and not _find_matching_app_pids(exe, app_clean):
+                    return _ok(f"Gracefully closed {app}.", verified=True)
 
-            # 2. Terminate matching non-protected executable via taskkill
+            if not force:
+                rem_pids = _find_matching_app_pids(exe, app_clean)
+                if not rem_pids and closed_wins == 0 and not pids_before and not wins_before:
+                    return _ok(f"{app} is not currently running.", verified=True)
+                return _err(
+                    f"Sent graceful close to {app}, but it is still running (it may have unsaved work or a confirmation prompt). "
+                    "Use force=True only if you explicitly want to force-terminate it."
+                )
+
+            # 2. Explicit force termination only when force=True
             res = subprocess.run(["taskkill", "/IM", exe, "/F"], capture_output=True, text=True)
 
             # 3. Also terminate any remaining matching processes via psutil
@@ -1287,12 +1330,27 @@ def system_status():
 
 def take_screenshot(path: str = ""):
     if not _check_perm("screen_view", "Take desktop screenshot"):
-        return _err("Screen viewing permission was denied.")
+        return _err("Screen viewing permission was denied.", permission_denied=True)
     try:
+        if path:
+            p = _resolve_path(path)
+            prot = _is_protected_path(p)
+            if prot:
+                return _err(prot)
+            try:
+                in_workspace = p.resolve().is_relative_to(WORKSPACE.resolve())
+            except Exception:
+                in_workspace = False
+            if not in_workspace:
+                if not _check_perm("file_modify", f"Save screenshot to custom path '{p}'"):
+                    return _err("File modification permission was denied for custom screenshot path.", permission_denied=True)
+                if p.exists():
+                    return _err(f"Refusing to overwrite existing file outside workspace: {p}")
+        else:
+            p = WORKSPACE / "screen.png"
         from screen_agent import capture_screen_with_metadata, ensure_dpi_awareness
         ensure_dpi_awareness()
         meta = capture_screen_with_metadata(max_dimension=4096, quality=95)
-        p = Path(path) if path else WORKSPACE / "screen.png"
         p.parent.mkdir(parents=True, exist_ok=True)
         from PIL import Image
         import io

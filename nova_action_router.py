@@ -71,6 +71,10 @@ ACTION_SCHEMAS: dict[str, dict[str, Any]] = {
     "walkthrough_back": {"required": [], "optional": [], "permission": None},
     "walkthrough_stop": {"required": [], "optional": [], "permission": None},
     "cancel_operation": {"required": [], "optional": [], "permission": None},
+    "offline_capabilities": {"required": [], "optional": [], "permission": None},
+    "local_knowledge_control": {"required": ["action"], "optional": ["path", "query"], "permission": None},
+    "search_local_files": {"required": ["query"], "optional": ["folder", "max_results"], "permission": None},
+    "run_safe_python": {"required": ["code"], "optional": ["timeout_seconds"], "permission": None},
 }
 
 DANGEROUS_PATTERNS = (
@@ -348,6 +352,11 @@ OFFLINE_VOICE_PHRASES: list[str] = [
     "system status", "check system status", "battery status", "cpu usage", "memory usage",
     "what time is it", "what is the time", "current time", "what is today's date", "date", "time",
     "list tasks", "show tasks", "my tasks", "list memories", "show memories",
+    "offline capabilities", "offline status", "check offline capabilities", "list indexed folders", "stop task",
+    "cancel task", "offline cpu mode", "offline gpu mode",
+    "look at screen", "what is on my screen", "analyze screen", "inspect screen",
+    "inspect document", "read document", "summarize document", "summarize pdf", "explain pdf",
+    "reindex local knowledge",
     "help", "offline help",
     "[unk]",
 ]
@@ -617,7 +626,36 @@ def match_offline_command(user_text: str) -> dict[str, Any] | None:
     if any(p in clean for p in ("brightness down", "decrease brightness", "lower brightness", "dimmer", "darker")):
         return {"action": "brightness_control", "arguments": {"action": "down", "amount": 10}, "description": "Decrease brightness"}
 
-    # 13. Screenshot & system status
+    # 13. Screenshot, screen/document understanding, system status, offline capabilities & local knowledge/file search
+    if any(p in clean for p in ("look at screen", "look at my screen", "what is on my screen", "what's on my screen", "analyze screen", "inspect screen", "describe my screen")):
+        return {"action": "look_at_screen", "arguments": {"query": "Explain what is on the screen and identify key UI elements or text."}, "description": "Inspect active screen"}
+    if clean in ("inspect document", "read document", "summarize document", "summarize pdf", "explain pdf", "read pdf", "explain document"):
+        return {"action": "inspect_document", "arguments": {"query": "Summarize this document and list its key sections."}, "description": "Inspect open or recent document"}
+    m_doc = re.match(r"^(?:inspect|read|summarize|explain)\s+(?:the\s+)?(?:document|pdf|file)\s+(.+)$", clean)
+    if m_doc and m_doc.group(1).strip():
+        d_path = m_doc.group(1).strip()
+        return {"action": "inspect_document", "arguments": {"path": d_path, "query": f"Summarize and explain {d_path}."}, "description": f"Inspect document '{d_path}'"}
+    if any(p in clean for p in ("offline capabilities", "offline status", "check offline capabilities", "what models are installed", "list local models")):
+        return {"action": "offline_capabilities", "arguments": {}, "description": "Inspect offline AI models, hardware, and local capabilities"}
+    if any(p in clean for p in ("list indexed folders", "show indexed folders", "local knowledge status")):
+        return {"action": "local_knowledge_control", "arguments": {"action": "list"}, "description": "List user-indexed local knowledge folders"}
+    if any(p in clean for p in ("reindex local knowledge", "refresh local knowledge", "reindex folders")):
+        return {"action": "local_knowledge_control", "arguments": {"action": "reindex"}, "description": "Re-index user-selected local knowledge folders"}
+    m_idx = re.match(r"^(?:index|add)\s+folder\s+(.+)$", clean)
+    if m_idx and m_idx.group(1).strip():
+        return {"action": "local_knowledge_control", "arguments": {"action": "add_folder", "path": m_idx.group(1).strip()}, "description": f"Index local folder '{m_idx.group(1).strip()}'"}
+    m_unidx = re.match(r"^(?:remove|unindex)\s+(?:indexed\s+)?folder\s+(.+)$", clean)
+    if m_unidx and m_unidx.group(1).strip():
+        return {"action": "local_knowledge_control", "arguments": {"action": "remove_folder", "path": m_unidx.group(1).strip()}, "description": f"Remove folder '{m_unidx.group(1).strip()}' from local knowledge"}
+    m_ksearch = re.match(r"^(?:search\s+local\s+knowledge|search\s+knowledge|search\s+docs)\s+(?:for\s+)?(.+)$", clean)
+    if m_ksearch and m_ksearch.group(1).strip():
+        return {"action": "local_knowledge_control", "arguments": {"action": "search", "query": m_ksearch.group(1).strip()}, "description": f"Search local knowledge for '{m_ksearch.group(1).strip()}'"}
+    m_fsearch = re.match(r"^(?:search|find)\s+(?:local\s+)?files?\s+(?:for\s+|named\s+)?(.+?)(?:\s+in\s+(downloads|documents|desktop|pictures|music|videos|workspace))?$", clean)
+    if m_fsearch and m_fsearch.group(1).strip():
+        f_args: dict[str, Any] = {"query": m_fsearch.group(1).strip()}
+        if m_fsearch.group(2):
+            f_args["folder"] = m_fsearch.group(2)
+        return {"action": "search_local_files", "arguments": f_args, "description": f"Search local files for '{f_args['query']}'"}
     if any(p in clean for p in ("take screenshot", "take a screenshot", "capture screenshot", "capture screen")) or clean == "screenshot":
         return {"action": "take_screenshot", "arguments": {}, "description": "Take a desktop screenshot"}
     if any(p in clean for p in ("system status", "battery status", "battery level", "cpu usage", "ram usage", "memory usage", "disk space", "check system status", "system info")) or clean in ("status", "battery"):

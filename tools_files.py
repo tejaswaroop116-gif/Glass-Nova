@@ -89,11 +89,46 @@ def _resolve_path(path: str):
     return Path(os.path.expandvars(os.path.expanduser(raw)))
 
 
+def _is_protected_path(p: Path) -> str:
+    """Return a non-empty reason string if 'p' (resolved through symlinks and '..') is a protected OS/root/app path."""
+    try:
+        resolved = p.resolve()
+    except Exception:
+        return "Invalid or unresolvable path."
+    # Block drive roots like C:\
+    if resolved.parent == resolved:
+        return f"Refusing operation on drive root '{resolved}'."
+    low = str(resolved).lower().rstrip("\\/")
+    home_low = str(Path.home().resolve()).lower().rstrip("\\/")
+    appdata_low = str(Path(os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming")).resolve()).lower().rstrip("\\/")
+    localapp_low = str(Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local")).resolve()).lower().rstrip("\\/")
+    app_root_low = str(Path(__file__).resolve().parent).lower().rstrip("\\/")
+
+    if low in (home_low, "c:\\users", appdata_low, localapp_low, app_root_low):
+        return f"Refusing operation on protected root directory '{resolved}'."
+
+    protected_prefixes = (
+        "c:\\windows",
+        "c:\\program files",
+        "c:\\program files (x86)",
+        "c:\\programdata",
+        "c:\\$recycle.bin",
+        "c:\\system volume information",
+    )
+    for pref in protected_prefixes:
+        if low == pref or low.startswith(pref + "\\"):
+            return f"Refusing operation inside protected Windows system directory '{resolved}'."
+    return ""
+
+
 def create_folder(path: str):
     if not _check_perm("file_modify", f"Create folder '{path}'"):
         return _err("File modification permission was denied.")
     try:
         p = _resolve_path(path)
+        prot = _is_protected_path(p)
+        if prot:
+            return _err(prot)
         p.mkdir(parents=True, exist_ok=True)
         return _ok(f"Created folder {p}.", path=str(p))
     except Exception as e:
@@ -101,6 +136,8 @@ def create_folder(path: str):
 
 
 def list_folder(path: str = "downloads"):
+    if not _check_perm("document_access", f"List folder contents of '{path}'"):
+        return _err("Document access permission was denied.", permission_denied=True)
     try:
         p = _resolve_path(path)
         if not p.is_dir():
@@ -185,12 +222,15 @@ def move_file(source: str, destination: str):
 def delete_file(path: str, confirm: bool = False):
     try:
         p = _resolve_path(path)
+        prot = _is_protected_path(p)
+        if prot:
+            return _err(prot)
         if not p.exists():
             return _err(f"That file or folder does not exist: {p}")
         if not confirm:
             return {"ok": False, "confirmation_required": True, "message": f"Deleting {p} is destructive. Ask the user for confirmation before deleting it."}
         if not _check_perm("file_delete", f"Delete '{p}'", {"path": str(p)}):
-            return _err("File deletion permission was denied.")
+            return _err("File deletion permission was denied.", permission_denied=True)
         import shutil
         if p.is_dir():
             shutil.rmtree(p)

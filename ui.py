@@ -8,6 +8,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QFrame, QLabe
 from permissions import CATEGORIES, PermissionManager
 from wake_word import WakeWordListener
 from nova_companion_bridge import CompanionBridge
+from nova_lifecycle import LifecycleManager, SingleInstanceGuard
+from nova_voice_control import VoiceControlState, match_voice_control_command
 from nova_screen_pointing import RegionSelector, ScreenPointingService
 from nova_walkthrough import Walkthrough, WalkthroughStep, walkthrough_from_plan
 from nova_workflows import Workflow, WorkflowStep, WorkflowRecorder, WorkflowStore, WorkflowPlayer
@@ -32,17 +34,31 @@ class Nova(QMainWindow):
         try: self.tint = cl(int(self.settings.value('tint', 224)), 145, 252)
         except (TypeError, ValueError): self.tint = 224
         self.wake_enabled = str(self.settings.value('wake_enabled', 'true')).lower() != 'false'
-        self.minimize_to_tray = str(self.settings.value('minimize_to_tray', 'true')).lower() != 'false'
+        # Default: clicking X on the main window fully exits Glass Nova (close_to_tray is opt-in)
+        self.minimize_to_tray = str(self.settings.value('close_to_tray', 'false')).lower() == 'true'
+        self.text_mode_active = str(self.settings.value('text_mode_active', 'false')).lower() == 'true'
         try: self.mic_sensitivity = max(0, min(100, int(self.settings.value('mic_sensitivity', 68))))
         except (TypeError, ValueError): self.mic_sensitivity = 68
         self.mic_auto_nearest = str(self.settings.value('mic_auto_nearest', 'false')).lower() == 'true'
         self._mic_sens_widgets = []
         self._force_quit = False
+        self._quitting = False
+        self._instance_guard = None
+        self.lifecycle = LifecycleManager(on_log=self.append_log)
+        saved_voice_out = False if self.text_mode_active else (str(self.settings.value('voice_output', 'true')).lower() != 'false')
+        self.voice_state = VoiceControlState(
+            mic_listening=False,
+            spoken_replies=saved_voice_out,
+            wake_word_enabled=self.wake_enabled,
+            text_mode_locked=self.text_mode_active,
+        )
+        self.ai_mode = 'hybrid'
+        self.ai_provider = 'Local'
         self.gesture_active = False
         self._active_perm_dialogs = {}
         self.chat_entries, self._awaiting_reply = [], False                  # one shared transcript for voice + typed chat
         self._chat_timer = QTimer(self, singleShot=True, timeout=self._render_chat)
-        self.voice_output = str(self.settings.value('voice_output', 'true')).lower() != 'false'
+        self.voice_output = saved_voice_out
         self.mic_on = self.mic_starting = self._stopping = self._fatal_shown = False
         self.backend_state, self._pending, self._out_raw, self._err_raw, self._err_tail = 'stopped', [], b'', b'', []
         self.process = QProcess(self); self.process.setWorkingDirectory(str(ROOT))
@@ -79,10 +95,14 @@ class Nova(QMainWindow):
         self.lay = QVBoxLayout(self.root); self.lay.setContentsMargins(32, 26, 32, 32); self.lay.setSpacing(10)
         tb = QHBoxLayout(); tb.setContentsMargins(8, 2, 2, 0); tb.setSpacing(8)
         mark = QLabel(f'◉  {APP_NAME.upper()}'); mark.setStyleSheet('font-weight:700;color:#b7f4ff'); tb.addWidget(mark)
-        self.wake_badge = QLabel('🎙 Hey Nova: Active')
+        self.wake_badge = QLabel('👂 Wake Word: Active (Local)')
         self.wake_badge.setStyleSheet('padding:3px 10px;background:rgba(30,120,180,90);border:1px solid rgba(80,210,255,140);border-radius:10px;font-size:9pt;font-weight:600;color:#a5f1ff')
-        self.wake_badge.setToolTip('Offline wake-word listener status')
+        self.wake_badge.setToolTip('Local offline wake-word monitoring status (separate from conversational microphone listening)')
         tb.addWidget(self.wake_badge)
+        self.mode_badge = QLabel('⚡ Hybrid • Starting')
+        self.mode_badge.setStyleSheet('padding:3px 10px;background:rgba(45,75,145,110);border:1px solid rgba(110,180,255,135);border-radius:10px;font-size:9pt;font-weight:600;color:#cde8ff')
+        self.mode_badge.setToolTip('Current AI mode (Offline / Online / Hybrid) and active provider')
+        tb.addWidget(self.mode_badge)
         self.screen_badge = QLabel('👁 Screen Active')
         self.screen_badge.setStyleSheet('padding:3px 10px;background:rgba(20,160,180,140);border:1px solid #39e5ff;border-radius:10px;font-size:9pt;font-weight:700;color:#ffffff')
         self.screen_badge.setToolTip('Nova is actively observing or capturing your screen')
@@ -105,6 +125,13 @@ class Nova(QMainWindow):
         tb.addStretch(1)
         for txt, fn in (('—', self.showMinimized), ('□', self._toggle_max), ('×', self.close)):
             b = self.button(txt, fn, 'ctl'); b.setFixedSize(34, 28); tb.addWidget(b)
+            if txt == '×':
+                self.close_btn = b
+                self.close_btn.setToolTip(
+                    'Minimize Glass Nova to System Tray (use Tray → Exit Glass Nova to quit)'
+                    if self.minimize_to_tray
+                    else 'Close & Exit Glass Nova'
+                )
         self.lay.addLayout(tb); content = QHBoxLayout(); content.setSpacing(16); self.lay.addLayout(content, 1)
         side = QFrame(); side.setObjectName('sidebar'); side.setFixedWidth(218); sl = QVBoxLayout(side); sl.setContentsMargins(16, 18, 16, 18); sl.setSpacing(8)
         brand = QLabel(f'◉  {APP_NAME.upper()}'); brand.setObjectName('brand'); sl.addWidget(brand)
@@ -156,8 +183,10 @@ class Nova(QMainWindow):
             on_detected=lambda: self._wake_signal.detected.emit(),
             on_status_change=lambda s: self._wake_signal.status.emit(s)
         )
-        if self.wake_enabled:
+        if self.wake_enabled and not self.text_mode_active:
             self.wake_listener.start()
+        elif self.text_mode_active:
+            self._update_wake_badge(paused=True)
         else:
             self._handle_wake_status_qt('stopped')
         self.shortcut_key_str = str(self.settings.value('companion_shortcut', 'Ctrl+Shift+N') or 'Ctrl+Shift+N')
@@ -168,8 +197,37 @@ class Nova(QMainWindow):
         self._point_shortcut.setContext(Qt.ApplicationShortcut)
         self._point_shortcut.activated.connect(self.start_screen_pointing_ui)
         self._global_hotkeys_registered = False
+        self._register_lifecycle_components()
         QTimer.singleShot(300, self._register_win32_global_hotkeys)
         QTimer.singleShot(200, self._auto_start_backend)
+
+    def _register_lifecycle_components(self):
+        """Register all UI-owned resources with LifecycleManager for ordered, error-isolated shutdown."""
+        self.lifecycle.register('instance_guard', stop_fn=lambda: self._instance_guard.release() if getattr(self, '_instance_guard', None) else None, priority=10)
+        self.lifecycle.register('tray_icon', stop_fn=lambda: self.tray_icon.hide() if hasattr(self, 'tray_icon') else None, priority=20)
+        self.lifecycle.register('companions', stop_fn=self._close_all_companions, priority=30)
+        self.lifecycle.register('backend', stop_fn=self.shutdown_backend, priority=40)
+        self.lifecycle.register('wake_listener', stop_fn=lambda: self.wake_listener.stop() if getattr(self, 'wake_listener', None) else None, priority=50)
+        self.lifecycle.register('overlays_and_dialogs', stop_fn=self._close_overlays_and_dialogs, priority=60)
+        self.lifecycle.register('hotkeys', stop_fn=self._unregister_win32_global_hotkeys, priority=70)
+        self.lifecycle.start_all()
+
+    def _close_overlays_and_dialogs(self):
+        if hasattr(self, '_chat_timer') and self._chat_timer:
+            self._chat_timer.stop()
+        if getattr(self, '_active_region_selector', None) is not None:
+            self._active_region_selector.close()
+            self._active_region_selector = None
+        for dlg in list(getattr(self, '_active_perm_dialogs', {}).values()):
+            dlg.reject()
+        self._active_perm_dialogs.clear()
+        if hasattr(self, 'walkthrough_overlay') and self.walkthrough_overlay:
+            self.walkthrough_overlay.hide_target()
+            self.walkthrough_overlay.close()
+
+    def _close_all_companions(self):
+        for b in self.bots.values():
+            b.close()
 
     # -- builders
     def button(self, text, fn, name=None):
@@ -214,11 +272,38 @@ class Nova(QMainWindow):
         b, bv = self.panel('Activity monitor', 'Recent status messages appear here.'); self.activity = self.textbox('Assistant activity will appear here when started.'); self.activity.setMaximumHeight(115); bv.addWidget(self.activity)
         row.addWidget(self.mic_sens_overview, 1); row.addWidget(b, 1); v.addLayout(row); return w
     def _chat(self):
-        w = QWidget(); v = QVBoxLayout(w); pnl, p = self.panel('Chat & Voice', 'Type a message or use the live voice assistant. Chat replies appear here.')
-        self.chatlog = self.textbox(f'Type a message below to chat with {APP_NAME}. Voice transcriptions also appear here.'); p.addWidget(self.chatlog, 1); row = QHBoxLayout()
-        self.chat_input = QLineEdit(); self.chat_input.setPlaceholderText(f'Message {APP_NAME}…'); self.chat_input.returnPressed.connect(self.send_chat); row.addWidget(self.chat_input, 1)
+        w = QWidget(); v = QVBoxLayout(w); pnl, p = self.panel('Chat & Voice', 'Type a message or use the live voice assistant. Toggle microphone listening and spoken replies independently anytime.')
+        # Compact live status strip clearly separating Mic Listening, Spoken Replies, Wake Word, and AI Mode
+        self.chat_status_bar = QLabel('')
+        self.chat_status_bar.setObjectName('muted')
+        self.chat_status_bar.setStyleSheet('font-size:8.5pt;padding:4px 8px;background:rgba(15,35,58,110);border:1px solid rgba(90,190,240,80);border-radius:8px;color:#b8e6ff')
+        p.addWidget(self.chat_status_bar)
+
+        self.chatlog = self.textbox(f'Type a message below to chat with {APP_NAME}. Voice transcriptions also appear here.'); p.addWidget(self.chatlog, 1)
+
+        # Quick-access independent voice & spoken-reply controls right above chat input
+        qbar = QHBoxLayout(); qbar.setSpacing(8)
+        self.chat_mic_btn = self.button('🎙  Mic: OFF', self.toggle_voice)
+        self.chat_mic_btn.setToolTip('Toggle conversational microphone listening ON/OFF without ending chat or disconnecting Gemini Live')
+        self.chat_voice_btn = self.button('🔊  Spoken Replies: ON', self.toggle_voice_output)
+        self.chat_voice_btn.setToolTip('Toggle spoken replies ON/OFF independently of microphone listening (immediately stops speech when turned off)')
+        self.chat_stop_speak_btn = self.button('⏹  Stop Speaking', self.stop_speaking_ui)
+        self.chat_stop_speak_btn.setToolTip('Immediately stop Nova from speaking right now without disabling future spoken replies')
+        self.chat_mode_btn = self.button('💬  Text Mode', self.toggle_text_voice_mode)
+        self.chat_mode_btn.setToolTip('Quick shortcut to switch between Text-Only Mode (Mic OFF, Voice OFF) and Voice Mode (Mic ON, Voice ON)')
+        qbar.addWidget(self.chat_mic_btn)
+        qbar.addWidget(self.chat_voice_btn)
+        qbar.addWidget(self.chat_stop_speak_btn)
+        qbar.addWidget(self.chat_mode_btn)
+        qbar.addStretch(1)
+        p.addLayout(qbar)
+
+        row = QHBoxLayout()
+        self.chat_input = QLineEdit(); self.chat_input.setPlaceholderText(f'Message {APP_NAME}… (or type "stop listening", "mute your voice", "stop speaking")'); self.chat_input.returnPressed.connect(self.send_chat); row.addWidget(self.chat_input, 1)
         self.send_button = self.button('Send', self.send_chat, 'primary'); row.addWidget(self.send_button)
-        p.addLayout(row); v.addWidget(pnl, 1); return w
+        p.addLayout(row); v.addWidget(pnl, 1)
+        self._sync_voice_control_ui()
+        return w
     def _tasks(self):
         w = QWidget(); v = QVBoxLayout(w); v.setSpacing(14)
         tp, tv = self.panel('Tasks & Reminders', 'Manage tracked goals, tasks, and scheduled reminders stored locally.')
@@ -561,27 +646,16 @@ class Nova(QMainWindow):
         e.accept()
 
     def quit_app(self):
+        if getattr(self, '_quitting', False):
+            return
+        self._quitting = True
         self._force_quit = True
-        self._unregister_win32_global_hotkeys()
-        if hasattr(self, 'walkthrough_overlay') and self.walkthrough_overlay:
-            try:
-                self.walkthrough_overlay.hide_target()
-                self.walkthrough_overlay.close()
-            except Exception:
-                pass
-        if hasattr(self, 'wake_listener') and self.wake_listener:
-            try:
-                self.wake_listener.stop()
-            except Exception:
-                pass
-        self.shutdown_backend()
-        for b in self.bots.values():
-            try:
-                b.close()
-            except Exception:
-                pass
-        if hasattr(self, 'tray_icon'):
-            self.tray_icon.hide()
+        try:
+            self.hide()
+        except Exception:
+            pass
+        if hasattr(self, 'lifecycle') and self.lifecycle:
+            self.lifecycle.shutdown_all()
         QApplication.quit()
 
     def _on_tray_activated(self, reason):
@@ -592,13 +666,35 @@ class Nova(QMainWindow):
         trailing_cmd = getattr(self.wake_listener, 'last_command', '') if self.wake_listener else ''
         if self.wake_listener:
             self.wake_listener.last_command = ''
+
+        # Strict Text Mode lock: never auto-reactivate Nova bot, conversational mic, or voice mode
+        if getattr(self, 'text_mode_active', False):
+            if self.wake_listener:
+                self.wake_listener.pause()
+            self._update_wake_badge(paused=True)
+            self.append_log('[Text Mode] Ignored wake-word trigger while Text Mode is active.')
+            return
+
         self.append_log(f'[Wake Word] "Hey Nova" detected!{(" (" + trailing_cmd + ")") if trailing_cmd else ""}')
+        if hasattr(self, 'orb') and self.orb and hasattr(self.orb, 'react'):
+            self.orb.react(2.0)
+
+        # If the user spoke a direct voice-control command while conversational listening is OFF
+        # (e.g., "Nova, mute your voice", "Nova, stop speaking", "Nova, switch to text mode"),
+        # execute it without secretly activating full conversational listening!
+        vc_hit = match_voice_control_command(trailing_cmd) if trailing_cmd else None
+        if vc_hit is not None and vc_hit['control'] not in ('start_listening', 'voice_mode'):
+            if self.ensure_backend():
+                self.send_cmd(cmd='voice_control', control=vc_hit['control'], from_voice=True)
+            if self.wake_enabled and self.wake_listener and not (self.mic_on or self.mic_starting):
+                self.wake_listener.resume()
+                self._update_wake_badge(paused=False)
+            return
+
         if hasattr(self, 'companion_bridge') and self.companion_bridge:
             self.companion_bridge.on_wake_word()
         else:
             self.open_main_window()
-        if hasattr(self, 'orb') and self.orb and hasattr(self.orb, 'react'):
-            self.orb.react(2.0)
         if self.wake_listener:
             self.wake_listener.pause()
         self._update_wake_badge(paused=True)
@@ -615,20 +711,34 @@ class Nova(QMainWindow):
 
     def _update_wake_badge(self, paused=False, status=None):
         st = status or (self.wake_listener.status if hasattr(self, 'wake_listener') and self.wake_listener else 'stopped')
+        in_text_mode = bool(getattr(self, 'text_mode_active', False))
+        wake_active_now = bool(self.wake_enabled and not paused and not in_text_mode and st == 'listening' and not (self.mic_on or self.mic_starting))
+        if hasattr(self, 'voice_state'):
+            self.voice_state.set_wake_word(enabled=self.wake_enabled, active=wake_active_now)
         if hasattr(self, 'wake_badge') and self.wake_badge is not None:
             if not self.wake_enabled:
-                self.wake_badge.setText('🎙 Hey Nova: Off')
+                self.wake_badge.setText('👂 Wake Word: Off')
                 self.wake_badge.setStyleSheet('padding:3px 10px;background:rgba(40,50,60,90);border:1px solid rgba(120,130,140,100);border-radius:10px;font-size:9pt;font-weight:600;color:#9cb5c6')
-            elif paused or st == 'paused':
-                self.wake_badge.setText('🎙 Hey Nova: Paused')
+                self.wake_badge.setToolTip('Wake-word monitoring is OFF. Use the Mic button to start listening.')
+            elif in_text_mode:
+                self.wake_badge.setText('👂 Wake Word: Paused (Text Mode)')
+                self.wake_badge.setStyleSheet('padding:3px 10px;background:rgba(95,70,155,105);border:1px solid #b59bff;border-radius:10px;font-size:9pt;font-weight:600;color:#efe6ff')
+                self.wake_badge.setToolTip('Wake-word reactivation is paused while Text Mode is active. Switch back to Voice Mode or click Mic ON manually to re-enable.')
+            elif paused or st == 'paused' or self.mic_on or self.mic_starting:
+                self.wake_badge.setText('👂 Wake Word: Paused (Mic Active)')
                 self.wake_badge.setStyleSheet('padding:3px 10px;background:rgba(180,120,30,90);border:1px solid rgba(255,180,60,140);border-radius:10px;font-size:9pt;font-weight:600;color:#ffe4a0')
+                self.wake_badge.setToolTip('Wake-word listener is paused while conversational microphone listening is active.')
             elif st == 'error':
-                self.wake_badge.setText('🎙 Hey Nova: Error')
+                self.wake_badge.setText('👂 Wake Word: Error')
                 self.wake_badge.setStyleSheet('padding:3px 10px;background:rgba(180,40,40,90);border:1px solid rgba(255,80,80,140);border-radius:10px;font-size:9pt;font-weight:600;color:#ffa0a0')
             else:
-                self.wake_badge.setText('🎙 Hey Nova: Active')
+                self.wake_badge.setText('👂 Wake Word: Active (Local)')
                 self.wake_badge.setStyleSheet('padding:3px 10px;background:rgba(30,120,180,90);border:1px solid rgba(80,210,255,140);border-radius:10px;font-size:9pt;font-weight:600;color:#a5f1ff')
+                self.wake_badge.setToolTip('Local offline wake-word monitoring is active even when conversational mic is OFF. Say "Nova, start listening" to activate full listening.')
+        if self.backend_running():
+            self.send_cmd(cmd='wake_state', enabled=self.wake_enabled, active=wake_active_now)
         self._update_wake_btn_text()
+        self._sync_voice_control_ui()
 
     def _update_wake_btn_text(self):
         txt = 'Wake Word ("Hey Nova"): Active   (click to pause)' if self.wake_enabled else 'Wake Word ("Hey Nova"): Paused   (click to resume)'
@@ -666,13 +776,23 @@ class Nova(QMainWindow):
 
     def toggle_minimize_to_tray(self):
         self.minimize_to_tray = not self.minimize_to_tray
-        self.settings.setValue('minimize_to_tray', 'true' if self.minimize_to_tray else 'false')
+        self.settings.setValue('close_to_tray', 'true' if self.minimize_to_tray else 'false')
         self._update_tray_btn_text()
 
     def _update_tray_btn_text(self):
-        txt = 'Close to Tray: Enabled   (click to disable)' if self.minimize_to_tray else 'Close to Tray: Disabled   (click to enable)'
+        txt = (
+            'Close Button (×): Minimize to Tray   (click to make × exit Nova)'
+            if self.minimize_to_tray
+            else 'Close Button (×): Exit Nova Completely   (click to minimize to tray instead)'
+        )
         if hasattr(self, 'tray_toggle_btn'):
             self.tray_toggle_btn.setText(txt)
+        if hasattr(self, 'close_btn') and self.close_btn is not None:
+            self.close_btn.setToolTip(
+                'Minimize Glass Nova to System Tray (use Tray → Exit Glass Nova to quit)'
+                if self.minimize_to_tray
+                else 'Close & Exit Glass Nova'
+            )
 
     def _prompt_permission(self, req_id: str, cat: str, details: str) -> str:
         self.open_main_window()
@@ -687,7 +807,7 @@ class Nova(QMainWindow):
             dlg.exec()
         finally:
             self._active_perm_dialogs.pop(req_id, None)
-            if was_wake_listening and self.wake_enabled and not (self.mic_on or self.mic_starting):
+            if was_wake_listening and self.wake_enabled and not self.text_mode_active and not (self.mic_on or self.mic_starting):
                 self.wake_listener.resume()
         decision = dlg.selected_decision
         if decision in ('session', 'allow_session'):
@@ -823,6 +943,8 @@ class Nova(QMainWindow):
         elif self.process.state() == QProcess.Starting: self._pending.append(data)        # sent as soon as the process is up
     def _backend_started(self):
         self.process.write((json.dumps({'cmd': 'voice_output', 'on': self.voice_output}) + '\n').encode('utf-8'))
+        if self.text_mode_active:
+            self.process.write((json.dumps({'cmd': 'text_mode_sync', 'active': True}) + '\n').encode('utf-8'))
         self.process.write((json.dumps({
             'cmd': 'mic_sensitivity',
             'sensitivity': self.mic_sensitivity,
@@ -841,11 +963,20 @@ class Nova(QMainWindow):
 
     def toggle_voice(self):                       # Start/Stop VOICE only: the Live session and typed chat stay alive
         if self.mic_on or self.mic_starting:
-            self.mic_starting = False; self.send_cmd(cmd='mic_stop')
-            if self.wake_enabled and self.wake_listener:
-                self.wake_listener.resume()
-                self._update_wake_badge(paused=False)
+            self.mic_starting = False
+            if self.backend_running():
+                self.send_cmd(cmd='mic_stop')
+            else:
+                self.mic_on = False
+                if self.wake_enabled and not self.text_mode_active and self.wake_listener:
+                    self.wake_listener.resume()
+                    self._update_wake_badge(paused=False)
+            self._voice_btn_text()
             return
+        # Manual Mic ON explicitly exits Text Mode
+        if self.text_mode_active:
+            self.text_mode_active = False
+            self.settings.setValue('text_mode_active', 'false')
         if not self.ensure_backend(): return
         if self.wake_listener:
             self.wake_listener.pause()
@@ -855,6 +986,7 @@ class Nova(QMainWindow):
         txt = '■  Stop voice assistant' if (self.mic_on or self.mic_starting) else '▶  Start voice assistant'
         self.voice_btn.setText(txt)
         if hasattr(self, 'overview_voice_btn'): self.overview_voice_btn.setText(txt)
+        self._sync_voice_control_ui()
     def _auto_start_backend(self):
         self.ensure_backend()
     def _refresh_status(self):
@@ -894,12 +1026,39 @@ class Nova(QMainWindow):
             if self.backend_state == 'ready': self.append_log('Connected to Gemini Live.')
         elif t == 'mic':
             v = ev.get('v'); self.mic_on = v == 'on'; self.mic_starting = v == 'starting'
+            if hasattr(self, 'voice_state'):
+                self.voice_state.set_mic_listening(self.mic_on or self.mic_starting)
             if v == 'error': self._chat_error(text or 'The microphone could not be started.')
-            self._voice_btn_text(); self._refresh_status()
+            self._voice_btn_text(); self._refresh_status(); self._sync_voice_control_ui()
             if not self.mic_on and not self.mic_starting:
-                if self.wake_enabled and self.wake_listener:
+                if self.text_mode_active:
+                    if self.wake_listener:
+                        self.wake_listener.pause()
+                    self._update_wake_badge(paused=True)
+                elif self.wake_enabled and self.wake_listener:
                     self.wake_listener.resume()
                     self._update_wake_badge(paused=False)
+        elif t == 'voice_state':
+            if 'text_mode_locked' in ev:
+                self.text_mode_active = bool(ev['text_mode_locked'])
+                self.settings.setValue('text_mode_active', 'true' if self.text_mode_active else 'false')
+                if self.text_mode_active:
+                    self.voice_state.enter_text_mode()
+                    if self.wake_listener:
+                        self.wake_listener.pause()
+                    self._update_wake_badge(paused=True)
+            if 'spoken_replies' in ev:
+                self.voice_output = bool(ev['spoken_replies'])
+                self.settings.setValue('voice_output', 'true' if self.voice_output else 'false')
+                self.voice_state.set_spoken_replies(self.voice_output)
+            if 'mic_listening' in ev:
+                self.voice_state.set_mic_listening(bool(ev['mic_listening']))
+            if 'ai_mode' in ev or 'ai_provider' in ev:
+                self.ai_mode = str(ev.get('ai_mode', self.ai_mode))
+                self.ai_provider = str(ev.get('ai_provider', self.ai_provider))
+                self.voice_state.set_ai_backend(self.ai_mode, self.ai_provider)
+            self._voice_out_text()
+            self._sync_voice_control_ui()
         elif t == 'mic_level':
             rms = float(ev.get('rms', 0.0) or 0.0)
             gate = float(ev.get('gate', 120.0) or 120.0)
@@ -1065,8 +1224,120 @@ class Nova(QMainWindow):
         txt = 'Spoken replies: On   (click to turn off)' if self.voice_output else 'Spoken replies: Off   (click to turn on)'
         if hasattr(self, 'voice_out_btn'): self.voice_out_btn.setText(txt)
         if hasattr(self, 'tray_voice_out_act'): self.tray_voice_out_act.setText('Spoken Replies: On' if self.voice_output else 'Spoken Replies: Off')
+        self._sync_voice_control_ui()
+
+    def _sync_voice_control_ui(self):
+        """Synchronize Chat quick-access controls and top AI mode/provider badges with current independent states."""
+        mic_active = bool(self.mic_on or self.mic_starting)
+        spoken_on = bool(self.voice_output)
+        wake_on = bool(self.wake_enabled)
+        mode_lbl = (getattr(self, 'ai_mode', 'hybrid') or 'hybrid').capitalize()
+        prov_lbl = getattr(self, 'ai_provider', 'Local') or 'Local'
+
+        if hasattr(self, 'mode_badge') and self.mode_badge is not None:
+            self.mode_badge.setText(f'⚡ {mode_lbl} • {prov_lbl}')
+            if mode_lbl == 'Online':
+                self.mode_badge.setStyleSheet('padding:3px 10px;background:rgba(20,135,105,120);border:1px solid #55f0b8;border-radius:10px;font-size:9pt;font-weight:600;color:#e6fff6')
+            elif mode_lbl == 'Offline':
+                self.mode_badge.setStyleSheet('padding:3px 10px;background:rgba(95,70,155,120);border:1px solid #b59bff;border-radius:10px;font-size:9pt;font-weight:600;color:#f0e8ff')
+            else:
+                self.mode_badge.setStyleSheet('padding:3px 10px;background:rgba(45,75,145,110);border:1px solid rgba(110,180,255,135);border-radius:10px;font-size:9pt;font-weight:600;color:#cde8ff')
+
+        if hasattr(self, 'chat_mic_btn') and self.chat_mic_btn is not None:
+            self.chat_mic_btn.setText('🎙  Mic: ON' if mic_active else '🎙  Mic: OFF')
+            self.chat_mic_btn.setObjectName('primary' if mic_active else '')
+            self.chat_mic_btn.style().unpolish(self.chat_mic_btn); self.chat_mic_btn.style().polish(self.chat_mic_btn)
+            if mic_active:
+                self.chat_mic_btn.setToolTip('Conversational microphone listening is ON. Click to turn OFF (keeps chat & AI session open).')
+            elif wake_on:
+                self.chat_mic_btn.setToolTip('Conversational microphone listening is OFF. Local "Hey Nova" wake-word monitoring is still active. Click to start full listening.')
+            else:
+                self.chat_mic_btn.setToolTip('All microphone monitoring is OFF. Click to start conversational listening.')
+
+        if hasattr(self, 'chat_voice_btn') and self.chat_voice_btn is not None:
+            self.chat_voice_btn.setText('🔊  Spoken Replies: ON' if spoken_on else '🔇  Spoken Replies: OFF')
+            self.chat_voice_btn.setObjectName('primary' if spoken_on else '')
+            self.chat_voice_btn.style().unpolish(self.chat_voice_btn); self.chat_voice_btn.style().polish(self.chat_voice_btn)
+
+        if hasattr(self, 'chat_mode_btn') and self.chat_mode_btn is not None:
+            if mic_active or spoken_on:
+                self.chat_mode_btn.setText('💬  Text Mode')
+                self.chat_mode_btn.setToolTip('Switch to Text-Only Mode (Mic OFF + Spoken Replies OFF)')
+            else:
+                self.chat_mode_btn.setText('🎙  Voice Mode')
+                self.chat_mode_btn.setToolTip('Switch to Voice Mode (Mic ON + Spoken Replies ON)')
+
+        if hasattr(self, 'chat_status_bar') and self.chat_status_bar is not None:
+            in_tm = bool(getattr(self, 'text_mode_active', False))
+            if in_tm:
+                wake_txt = 'Paused (Text Mode)'
+            elif wake_on and mic_active:
+                wake_txt = 'Paused (Mic ON)'
+            elif wake_on:
+                wake_txt = 'ON (Local)'
+            else:
+                wake_txt = 'OFF'
+            self.chat_status_bar.setText(
+                f"Mic Listening: {'ON' if mic_active else 'OFF'}   •   "
+                f"Spoken Replies: {'ON' if spoken_on else 'OFF'}   •   "
+                f"Wake Word: {wake_txt}   •   "
+                f"AI: {mode_lbl} ({prov_lbl})"
+            )
+
+    def stop_speaking_ui(self):
+        """Immediately stop Nova from speaking right now without disabling future spoken replies."""
+        if self.backend_running():
+            self.send_cmd(cmd='stop_speaking')
+        if self.assistant_state == 'speaking':
+            self.set_orb_state('listening' if self.mic_on else 'idle')
+        self.append_log('[Voice] Stopped current speech output.')
+
+    def toggle_text_voice_mode(self):
+        """One-click toggle between Text-Only Mode (Mic OFF, Spoken OFF, Wake-Word paused) and Voice Mode (Mic ON, Spoken ON)."""
+        if self.mic_on or self.mic_starting or self.voice_output or not self.text_mode_active:
+            # Enter locked Text-Only Mode: stays in Text Mode indefinitely until user manually switches back
+            self.text_mode_active = True
+            self.settings.setValue('text_mode_active', 'true')
+            self.voice_output = False
+            self.settings.setValue('voice_output', 'false')
+            self.voice_state.enter_text_mode()
+            self.mic_starting = False
+            if self.wake_listener:
+                self.wake_listener.pause()
+            if self.backend_running():
+                self.send_cmd(cmd='voice_control', control='text_mode')
+            else:
+                self.mic_on = False
+            self._update_wake_badge(paused=True)
+            self._voice_out_text()
+            self._voice_btn_text()
+        else:
+            # Manually exit Text Mode and switch to Voice Mode
+            self.text_mode_active = False
+            self.settings.setValue('text_mode_active', 'false')
+            self.voice_output = True
+            self.settings.setValue('voice_output', 'true')
+            self.voice_state.exit_text_mode(mic_on=True, spoken_on=True)
+            if self.ensure_backend():
+                if self.wake_listener:
+                    self.wake_listener.pause()
+                    self._update_wake_badge(paused=True)
+                self.mic_starting = True
+                self._voice_btn_text()
+                self.send_cmd(cmd='voice_control', control='voice_mode')
+            self._voice_out_text()
+
     def toggle_voice_output(self):
-        self.voice_output = not self.voice_output; self.settings.setValue('voice_output', 'true' if self.voice_output else 'false'); self._voice_out_text()
+        self.voice_output = not self.voice_output; self.settings.setValue('voice_output', 'true' if self.voice_output else 'false')
+        if self.voice_output and self.text_mode_active:
+            self.text_mode_active = False
+            self.settings.setValue('text_mode_active', 'false')
+            if self.wake_enabled and self.wake_listener and not (self.mic_on or self.mic_starting):
+                self.wake_listener.start()
+                self.wake_listener.resume()
+                self._update_wake_badge(paused=False)
+        self.voice_state.set_spoken_replies(self.voice_output)
+        self._voice_out_text()
         if self.backend_running(): self.send_cmd(cmd='voice_output', on=self.voice_output)
 
     def toggle_hand_gesture(self):
@@ -1349,6 +1620,25 @@ class Nova(QMainWindow):
 
 
 def main():
-    app = QApplication(sys.argv); app.setApplicationName(APP_NAME); app.setQuitOnLastWindowClosed(False); app.setStyle('Fusion'); win = Nova()
-    win.winId(); win.show(); win.apply_backdrop(); sys.exit(app.exec())   # native handle must exist before DWM calls
+    app = QApplication(sys.argv); app.setApplicationName(APP_NAME); app.setQuitOnLastWindowClosed(False); app.setStyle('Fusion')
+    guard = SingleInstanceGuard()
+    win_holder = {}
+
+    def _focus_existing():
+        w = win_holder.get('win')
+        if w is not None:
+            QTimer.singleShot(0, w.open_main_window)
+
+    if not guard.acquire(on_focus_requested=_focus_existing, use_qt_ipc=True):
+        sys.exit(0)
+
+    win = Nova()
+    win._instance_guard = guard
+    win_holder['win'] = win
+    app.aboutToQuit.connect(win.quit_app)
+    win.winId(); win.show(); win.apply_backdrop()
+    try:
+        sys.exit(app.exec())   # native handle must exist before DWM calls
+    finally:
+        guard.release()
 if __name__ == '__main__': main()

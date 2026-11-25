@@ -734,8 +734,10 @@ def _browser_windows() -> List[int]:
 def skip_youtube_ad() -> Dict[str, Any]:
     """Skip a YouTube ad: find the real Skip button, physically tap/invoke it, and confirm the ad was skipped."""
     ensure_dpi_awareness()
+    if not permissions.request_permission("screen_view", "View screen to locate and verify YouTube 'Skip Ad' button"):
+        return {"ok": False, "verified": False, "message": "Screen viewing permission was denied.", "permission_denied": True}
     if not permissions.request_permission("mouse_keyboard", "Click the YouTube 'Skip Ad' button"):
-        return {"ok": False, "message": "Mouse and keyboard permission was denied.", "permission_denied": True}
+        return {"ok": False, "verified": False, "message": "Mouse and keyboard permission was denied.", "permission_denied": True}
 
     browsers = _browser_windows() or _top_target_windows(3)
 
@@ -828,6 +830,8 @@ def click_element(label: str, button: str = "left", clicks: int = 1) -> Dict[str
     if _is_skip_ad_label(label):
         return skip_youtube_ad()
     action_desc = f"Click UI element '{label}'"
+    if not permissions.request_permission("screen_view", f"View screen to locate and verify '{label}'"):
+        return {"ok": False, "verified": False, "message": "Screen viewing permission was denied.", "permission_denied": True}
     if not permissions.request_permission("mouse_keyboard", action_desc):
         return {"ok": False, "verified": False, "message": "Mouse and keyboard permission was denied.", "permission_denied": True}
 
@@ -1442,6 +1446,8 @@ def press_keyboard_hotkey(keys: str) -> Dict[str, Any]:
 def scroll_desktop(direction: str = "down", amount: int = 5) -> Dict[str, Any]:
     """Scrolls the active window, browser page, or document up or down and checks if the view visually scrolled."""
     action_desc = f"Scroll {direction} by {amount} steps"
+    if not permissions.request_permission("screen_view", f"View screen to verify scroll ({direction})"):
+        return {"ok": False, "verified": False, "message": "Screen viewing permission was denied.", "permission_denied": True}
     if not permissions.request_permission("mouse_keyboard", action_desc):
         return {"ok": False, "verified": False, "message": "Mouse and keyboard permission was denied.", "permission_denied": True}
     try:

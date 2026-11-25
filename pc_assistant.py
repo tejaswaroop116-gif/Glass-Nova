@@ -35,7 +35,7 @@ from tools import (
     mouse_control, clipboard_control, create_folder, list_folder, rename_file, copy_file, move_file, delete_file,
     memory_control, task_control
 )
-from permissions import permissions, CATEGORIES
+from permissions import permissions, CATEGORIES, ALWAYS_PROMPT_CATEGORIES
 from screen_agent import analyze_screen
 from document_agent import analyze_document
 from video_agent import analyze_video
@@ -61,6 +61,10 @@ from nova_workflows import (
     WorkflowPlayer,
     ALLOWLISTED_WORKFLOW_ACTIONS,
 )
+from nova_offline_ai import ConversationContextManager, OfflineCapabilityManager, OllamaClient
+from nova_local_knowledge import knowledge_store, local_knowledge_control, run_safe_python, search_local_files
+from nova_offline_agent import OfflineAgent
+from nova_voice_control import VOICE_CONTROL_PHRASES, VoiceControlState, match_voice_control_command
 
 HERE = Path(__file__).resolve().parent
 WORKFLOWS_DIR = Path(os.environ.get("APPDATA") or Path.home()) / "PC_Complete_Assistant" / "workflows"
@@ -70,7 +74,24 @@ _active_walkthrough: Walkthrough | None = None
 _active_workflow_player: WorkflowPlayer | None = None
 load_dotenv(HERE / ".env")
 API_KEY = os.getenv("GEMINI_API_KEY")
-MODEL = os.getenv("MODEL", "gemini-3.8-live")
+DEFAULT_LIVE_MODEL = "gemini-2.5-flash-native-audio-preview"
+LIVE_MODEL_FALLBACKS = (
+    "gemini-2.5-flash-native-audio-preview",
+    "gemini-2.5-flash-native-audio-preview-09-2025",
+    "gemini-2.0-flash-live-001",
+    "gemini-2.0-flash-exp",
+)
+MODEL = (os.getenv("MODEL") or DEFAULT_LIVE_MODEL).strip()
+
+
+def get_live_models() -> list[str]:
+    """Return ordered Gemini Live model candidates: user-configured MODEL first, followed by verified fallbacks."""
+    candidates: list[str] = []
+    env_m = (os.getenv("MODEL") or MODEL or "").strip()
+    for m in (env_m, *LIVE_MODEL_FALLBACKS):
+        if m and m not in candidates:
+            candidates.append(m)
+    return candidates
 
 MARK = "@@NOVA@@"
 _EMIT_LOCK = threading.Lock()
@@ -194,30 +215,39 @@ def _get_vosk_model():
 
 
 def _parse_voice_perm_decision(text: str):
-    """Parse spoken approval/denial when a permission request is waiting."""
+    """Strictly parse explicit, unambiguous spoken approval/denial when a permission request is waiting.
+    - Rejects ambiguous single words like 'ok', 'okay', 'yes', 'sure', 'ahead', 'give', 'session'.
+    - Defaults explicit approvals to 'allow_once'; requires explicit session phrasing for 'allow_session'."""
     if not text:
         return None
-    clean = text.lower().replace("'", "").replace(",", " ").replace(".", " ").strip()
+    clean = " ".join(text.lower().replace("'", "").replace(",", " ").replace(".", " ").split())
     tokens = [t for t in clean.split() if t != "[unk]"]
     if not tokens:
         return None
+    joined = " ".join(tokens)
     words = set(tokens)
     if words & {"deny", "no", "nope", "cancel", "reject", "stop", "dont", "not", "never"}:
         return "deny"
-    if "once" in words:
-        return "allow_once"
-    if words & {
-        "allow", "yes", "yeah", "yep", "sure", "okay", "ok", "grant", "granted",
-        "give", "permission", "approve", "accept", "enable", "ahead", "session"
-    }:
+    if any(p in joined for p in (
+        "allow for this session", "allow for session", "allow session",
+        "approve for this session", "approve for session", "grant for this session",
+    )):
         return "allow_session"
+    if any(p in joined for p in (
+        "allow once", "allow this once", "allow this action", "just once",
+        "approve once", "allow camera", "allow screen", "allow mouse", "allow keyboard",
+        "grant permission", "give permission", "i give permission", "permission granted",
+    )) or joined in ("allow", "approve"):
+        return "allow_once"
     return None
 
 
 def _resolve_pending_perm_by_voice(decision: str):
-    """Resolve any waiting permission request via voice and instruct UI to close the dialog."""
+    """Resolve eligible waiting permission requests via voice (NEVER high-risk ALWAYS_PROMPT_CATEGORIES)."""
     with _pending_perms_lock:
         for req_id, info in list(_pending_perms.items()):
+            if info.get("category") in ALWAYS_PROMPT_CATEGORIES:
+                continue
             if not info["event"].is_set():
                 info["decision"] = decision
                 info["voice"] = True
@@ -226,7 +256,17 @@ def _resolve_pending_perm_by_voice(decision: str):
 
 
 def _wait_for_perm_with_voice(req_id: str, category: str, ev: threading.Event, timeout: float = 90.0):
-    """Waits for either UI button click OR spoken 'Allow' / 'Yes' / 'Deny' via Vosk."""
+    """Waits for UI button click, or (only for non-high-risk categories while conversational mic is already active
+    and Text Mode is NOT locked) explicit spoken 'Allow once' / 'Allow for this session' / 'Deny'."""
+    if category in ALWAYS_PROMPT_CATEGORIES:
+        ev.wait(timeout=timeout)
+        return
+
+    # Never open a hidden/temporary microphone stream when conversational mic is OFF or Text Mode is active!
+    if not _mic_stream_state.get("active") or _mic_stream_state.get("text_mode_locked"):
+        ev.wait(timeout=timeout)
+        return
+
     model = _get_vosk_model()
     recognizer = None
     if model is not None:
@@ -242,73 +282,45 @@ def _wait_for_perm_with_voice(req_id: str, category: str, ev: threading.Event, t
         except Exception:
             break
 
-    temp_stream = None
-    try:
-        if recognizer is not None and sd is not None and not _mic_stream_state.get("active"):
-            time.sleep(0.12)
-            if not _mic_stream_state.get("active") and not ev.is_set():
-                def _temp_cb(indata, frames, time_info, status):
-                    if not ev.is_set() and not _mic_stream_state.get("speaking"):
-                        try:
-                            if _perm_audio_queue.full():
-                                _perm_audio_queue.get_nowait()
-                            _perm_audio_queue.put_nowait(bytes(indata))
-                        except Exception:
-                            pass
-                try:
-                    temp_stream = sd.RawInputStream(
-                        samplerate=16000, blocksize=1024, channels=1, dtype="int16", callback=_temp_cb
-                    )
-                    temp_stream.start()
-                except Exception:
-                    temp_stream = None
+    deadline = time.monotonic() + timeout
+    last_partial = ""
+    partial_since = 0.0
 
-        deadline = time.monotonic() + timeout
-        last_partial = ""
-        partial_since = 0.0
-
-        while not ev.is_set() and time.monotonic() < deadline:
-            if recognizer is None:
-                ev.wait(timeout=0.2)
-                continue
-            try:
-                data = _perm_audio_queue.get(timeout=0.05)
-            except queue.Empty:
-                if last_partial and (time.monotonic() - partial_since) >= 0.35:
-                    dec = _parse_voice_perm_decision(last_partial)
-                    if dec:
-                        _resolve_pending_perm_by_voice(dec)
-                        break
-                continue
-
-            if _mic_stream_state.get("speaking"):
-                continue
-
-            if recognizer.AcceptWaveform(data):
-                res = json.loads(recognizer.Result() or "{}")
-                dec = _parse_voice_perm_decision(res.get("text", ""))
+    while not ev.is_set() and time.monotonic() < deadline:
+        if recognizer is None or not _mic_stream_state.get("active") or _mic_stream_state.get("text_mode_locked"):
+            ev.wait(timeout=0.2)
+            continue
+        try:
+            data = _perm_audio_queue.get(timeout=0.05)
+        except queue.Empty:
+            if last_partial and (time.monotonic() - partial_since) >= 0.35:
+                dec = _parse_voice_perm_decision(last_partial)
                 if dec:
                     _resolve_pending_perm_by_voice(dec)
                     break
-                last_partial = ""
-            else:
-                part = json.loads(recognizer.PartialResult() or "{}")
-                p_text = part.get("partial", "").strip()
-                if p_text != last_partial:
-                    last_partial = p_text
-                    partial_since = time.monotonic()
-                elif p_text and (time.monotonic() - partial_since) >= 0.35:
-                    dec = _parse_voice_perm_decision(p_text)
-                    if dec:
-                        _resolve_pending_perm_by_voice(dec)
-                        break
-    finally:
-        if temp_stream is not None:
-            try:
-                temp_stream.stop()
-                temp_stream.close()
-            except Exception:
-                pass
+            continue
+
+        if _mic_stream_state.get("speaking"):
+            continue
+
+        if recognizer.AcceptWaveform(data):
+            res = json.loads(recognizer.Result() or "{}")
+            dec = _parse_voice_perm_decision(res.get("text", ""))
+            if dec:
+                _resolve_pending_perm_by_voice(dec)
+                break
+            last_partial = ""
+        else:
+            part = json.loads(recognizer.PartialResult() or "{}")
+            p_text = part.get("partial", "").strip()
+            if p_text != last_partial:
+                last_partial = p_text
+                partial_since = time.monotonic()
+            elif p_text and (time.monotonic() - partial_since) >= 0.35:
+                dec = _parse_voice_perm_decision(p_text)
+                if dec:
+                    _resolve_pending_perm_by_voice(dec)
+                    break
 
 
 _user_revoked_categories = set()
@@ -317,28 +329,15 @@ _ipc_loop_running = False
 
 def _ipc_perm_callback(category: str, action_desc: str, details: dict) -> str:
     """Invoked whenever a visual, file, or desktop control tool requests permission.
-    Requires explicit user approval per category/session (or per-action for destructive/continuous categories)."""
-    always_prompt = category in ("file_delete", "form_purchase", "continuous_screen")
+    Strictly fail-closed: requires explicit user approval via the live UI IPC loop.
+    Never silently grants permissions in non-TTY scripts or via environment variables."""
+    always_prompt = category in ALWAYS_PROMPT_CATEGORIES
     if not always_prompt and permissions.is_granted(category) and category not in _user_revoked_categories:
         return "session"
 
-    if os.getenv("NOVA_AUTO_PERMISSION", "").lower() in ("1", "true", "yes"):
-        if not always_prompt:
-            permissions.grant_session(category)
-            emit("perm_sync", active=permissions.get_status())
-            emit("perm_notification", category=category, desc=action_desc)
-            return "session"
+    # Fail-closed when no live UI IPC session is running (tests must inject an explicit mock prompt_callback)
+    if not _ipc_loop_running:
         return "deny"
-
-    # When imported by automated non-UI unit tests (no stdin command reader running),
-    # allow non-destructive test calls unless explicitly revoked; in live UI/voice sessions, always prompt.
-    if not _ipc_loop_running and not always_prompt and category not in _user_revoked_categories:
-        is_tty = sys.stdin.isatty() if hasattr(sys.stdin, "isatty") else False
-        if not is_tty:
-            permissions.grant_session(category)
-            emit("perm_sync", active=permissions.get_status())
-            emit("perm_notification", category=category, desc=action_desc)
-            return "session"
 
     req_id = uuid.uuid4().hex[:8]
     ev = threading.Event()
@@ -352,7 +351,7 @@ def _ipc_perm_callback(category: str, action_desc: str, details: dict) -> str:
     with _pending_perms_lock:
         entry = _pending_perms.pop(req_id, {})
     decision = str(entry.get("decision", "deny")).lower().strip()
-    if decision in ("session", "allow_session"):
+    if decision in ("session", "allow_session") and not always_prompt:
         _user_revoked_categories.discard(category)
         permissions.grant_session(category)
         emit("perm_sync", active=permissions.get_status())
@@ -366,29 +365,43 @@ permissions.set_prompt_callback(_ipc_perm_callback)
 
 def manage_permission(action: str, category: str = "screen_view", scope: str = "session"):
     """
-    Manage Nova permissions via voice command or chat.
-    Actions: 'grant', 'allow', 'revoke', 'status'.
-    Categories: 'screen_view', 'camera', 'mouse_keyboard', 'document_access', 'media_access', 'file_modify', 'file_delete', 'all'.
+    Manage Nova permissions (status / revoke / UI-confirmed grant).
+    Actions: 'status', 'revoke', 'grant' (grant ALWAYS requires explicit trusted UI confirmation;
+    AI models are blocked from self-granting permissions).
     """
     act = action.lower().strip()
     cat = category.lower().strip()
     if act in ("grant", "allow", "yes", "enable"):
-        granted = permissions.grant_by_voice(cat, scope=scope)
+        targets = [t for t in permissions._resolve_categories(cat) if t not in ALWAYS_PROMPT_CATEGORIES]
+        if not targets:
+            return {
+                "ok": False,
+                "verified": False,
+                "permission_denied": True,
+                "message": (
+                    f"Cannot bulk-grant '{category}'. High-risk permissions (file deletion, purchases, continuous screen) "
+                    "always require per-action UI confirmation."
+                ),
+            }
+        granted = []
+        for t in targets:
+            if permissions.request_permission(t, f"Grant permission for '{CATEGORIES.get(t, {}).get('title', t)}'"):
+                _user_revoked_categories.discard(t)
+                granted.append(t)
+        emit("perm_sync", active=permissions.get_status())
         if not granted:
             return {
                 "ok": False,
                 "verified": False,
-                "message": f"Unknown permission category '{category}'. Valid categories: {', '.join(CATEGORIES.keys())}, 'camera', 'mouse', or 'all'."
+                "permission_denied": True,
+                "message": f"Permission grant for '{category}' was denied or requires explicit UI confirmation.",
             }
-        for c in granted:
-            _user_revoked_categories.discard(c)
         cats_str = ", ".join(CATEGORIES.get(c, {}).get("title", c) for c in granted)
-        emit("perm_sync", active=permissions.get_status())
-        emit("log", text=f"[Voice Permission] Granted '{cats_str}' for session.")
+        emit("log", text=f"[Permission] User confirmed '{cats_str}'.")
         return {
             "ok": True,
             "verified": True,
-            "message": f"Permission for {cats_str} has been granted for this session.",
+            "message": f"Permission for {cats_str} has been granted.",
             "granted": granted
         }
     elif act in ("revoke", "deny", "disable"):
@@ -429,14 +442,14 @@ gesture_manager._on_state_change = _on_gesture_state_change
 def hand_gesture_control(action: str = "start", show_preview: bool = True):
     """
     Control the Hand Gesture Mouse Controller via webcam.
-    Actions: 'start' ('on', 'enable', 'turn_on'), 'stop' ('off', 'disable', 'turn_off'),
-    'pause', 'resume', 'toggle', 'show_preview', 'hide_preview', 'status'.
+    Requires BOTH explicit 'media_access' (webcam) AND 'mouse_keyboard' (cursor control) permissions.
     """
     act = (action or "start").lower().strip()
     if act in ("start", "on", "enable", "turn_on", "turn on", "open", "activate"):
+        if not permissions.request_permission("media_access", "Access webcam for Hand Gesture Mouse Control"):
+            return {"ok": False, "verified": False, "permission_denied": True, "message": "Webcam (media_access) permission was denied."}
         if not permissions.request_permission("mouse_keyboard", "Control mouse cursor via hand gestures"):
-            return {"ok": False, "message": "Permission for mouse & keyboard control was denied."}
-        permissions.grant_session("media_access")
+            return {"ok": False, "verified": False, "permission_denied": True, "message": "Mouse & keyboard permission was denied."}
         emit("perm_sync", active=permissions.get_status())
         return gesture_manager.start(show_preview=show_preview)
     elif act in ("stop", "off", "disable", "turn_off", "turn off", "close", "quit", "deactivate"):
@@ -448,9 +461,10 @@ def hand_gesture_control(action: str = "start", show_preview: bool = True):
     elif act == "toggle":
         if gesture_manager.is_running:
             return gesture_manager.stop()
+        if not permissions.request_permission("media_access", "Access webcam for Hand Gesture Mouse Control"):
+            return {"ok": False, "verified": False, "permission_denied": True, "message": "Webcam (media_access) permission was denied."}
         if not permissions.request_permission("mouse_keyboard", "Control mouse cursor via hand gestures"):
-            return {"ok": False, "message": "Permission for mouse & keyboard control was denied."}
-        permissions.grant_session("media_access")
+            return {"ok": False, "verified": False, "permission_denied": True, "message": "Mouse & keyboard permission was denied."}
         emit("perm_sync", active=permissions.get_status())
         return gesture_manager.start(show_preview=show_preview)
     elif act in ("hide_preview", "hide"):
@@ -510,8 +524,26 @@ def point_at_screen(question: str = "What is this region on my screen and how do
     }
 
 
+def _parse_walkthrough_json_steps(raw: str) -> list[dict] | None:
+    if not raw:
+        return None
+    import re
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip(), flags=re.IGNORECASE | re.DOTALL).strip()
+    m = re.search(r"\{[\s\S]*\}", cleaned)
+    if not m:
+        return None
+    try:
+        parsed = json.loads(m.group(0))
+        steps = parsed.get("steps") if isinstance(parsed, dict) else None
+        if isinstance(steps, list) and steps:
+            return steps
+    except Exception:
+        return None
+    return None
+
+
 def _generate_walkthrough_steps_via_ai(goal: str) -> list[dict]:
-    """Ask the configured Gemini model for an ordered sequence of guidance-only walkthrough steps."""
+    """Ask Gemini (online) or local Ollama (offline) for ordered guidance-only walkthrough steps."""
     from screen_agent import get_vision_models, get_active_window_title
     active_win = get_active_window_title()
     sys_inst = (
@@ -523,36 +555,50 @@ def _generate_walkthrough_steps_via_ai(goal: str) -> list[dict]:
         "If a specific visible button or menu item should be highlighted via UI Automation, put its exact label in 'target_label'; otherwise null."
     )
     prompt = f"User goal: {goal}\nCurrently active window: {active_win}"
-    for m_name in get_vision_models():
-        try:
-            resp = client.models.generate_content(
-                model=m_name,
-                contents=[types.Part.from_text(text=prompt)],
-                config=types.GenerateContentConfig(
-                    system_instruction=sys_inst,
-                    temperature=0.2,
-                    max_output_tokens=750,
-                ),
-            )
-            raw = (resp.text or "").strip()
-            if not raw:
-                continue
-            import re
-            cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.IGNORECASE | re.DOTALL).strip()
-            m = re.search(r"\{[\s\S]*\}", cleaned)
-            if m:
-                parsed = json.loads(m.group(0))
-                steps = parsed.get("steps") if isinstance(parsed, dict) else None
-                if isinstance(steps, list) and steps:
+    if client is not None:
+        for m_name in get_vision_models():
+            try:
+                resp = client.models.generate_content(
+                    model=m_name,
+                    contents=[types.Part.from_text(text=prompt)],
+                    config=types.GenerateContentConfig(
+                        system_instruction=sys_inst,
+                        temperature=0.2,
+                        max_output_tokens=750,
+                    ),
+                )
+                steps = _parse_walkthrough_json_steps(resp.text or "")
+                if steps:
                     return steps
-        except Exception:
-            continue
+            except Exception as e:
+                emit("log", text=f"[Walkthrough] Gemini model '{m_name}' failed: {type(e).__name__}: {e}")
+                continue
+
+    # Offline fallback: try local Ollama if running with an installed model
+    try:
+        if offline_ollama.is_available(timeout=0.8) and offline_ollama.select_best_model(vision=False):
+            ol_res = offline_ollama.chat(
+                messages=[
+                    {"role": "system", "content": sys_inst},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.2,
+                num_ctx=4096,
+            )
+            if ol_res.get("ok"):
+                steps = _parse_walkthrough_json_steps(ol_res.get("content", ""))
+                if steps:
+                    return steps
+    except Exception as e:
+        emit("log", text=f"[Walkthrough] Local Ollama fallback failed: {type(e).__name__}: {e}")
+
+    emit("log", text="[Walkthrough] Neither Gemini nor local Ollama is available; using offline generic walkthrough template.")
     return [
         {
             "title": "Step 1: Open the target application or menu",
             "instruction": f"Locate the main window or menu needed for: {goal}.",
             "target_label": None,
-            "caution": None,
+            "caution": "Offline generic guidance (start Ollama or connect to Gemini for AI-tailored steps).",
         },
         {
             "title": "Step 2: Locate the relevant setting or control",
@@ -811,6 +857,18 @@ def workflow_control(action: str = "list", name: str = "", workflow_id: str = ""
     return {"ok": False, "verified": False, "message": f"Unknown workflow_control action '{action}'."}
 
 
+offline_ollama = OllamaClient()
+offline_capability_mgr = OfflineCapabilityManager(offline_ollama)
+offline_context = ConversationContextManager(max_turns=12, max_context_chars=9000)
+
+
+def offline_capabilities() -> dict:
+    """Return a real-time report of local Ollama models, hardware, speech/OCR engines, and offline tools."""
+    report = offline_capability_mgr.inspect()
+    report["message"] = offline_capability_mgr.format_summary(report)
+    return report
+
+
 TOOLS = {
     "open_app":open_app,"open_file":open_file,"open_url":open_url,"search_web":search_web,"play_youtube":play_youtube,"open_folder":open_folder,
     "system_status":system_status,"volume_control":volume_control,"brightness_control":brightness_control,
@@ -838,6 +896,10 @@ TOOLS = {
     "point_at_screen": point_at_screen,
     "walkthrough_control": walkthrough_control,
     "workflow_control": workflow_control,
+    "offline_capabilities": offline_capabilities,
+    "local_knowledge_control": local_knowledge_control,
+    "search_local_files": search_local_files,
+    "run_safe_python": run_safe_python,
 }
 
 
@@ -871,6 +933,14 @@ live_action_broker = ApprovedActionBroker(
 )
 for _t_name, _t_fn in TOOLS.items():
     live_action_broker.register(_t_name, _t_fn)
+
+offline_agent = OfflineAgent(
+    ollama=offline_ollama,
+    broker=live_action_broker,
+    context=offline_context,
+    knowledge=knowledge_store,
+    max_steps=5,
+)
 
 
 def _normalize_tool_result(tool_name: str, raw_result) -> dict:
@@ -963,6 +1033,11 @@ class LiveManager:
         self.ready = asyncio.Event()
         self.stop_evt = asyncio.Event()
         self.send_lock = asyncio.Lock()
+        self._mic_lock = asyncio.Lock()
+        self._tts_lock = threading.Lock()
+        self._tts_epoch = 0
+        self._sapi_voice = None
+        self._shutdown_done = False
         self.closing = False
         self.fatal = False
         self.resume_handle = None
@@ -970,12 +1045,14 @@ class LiveManager:
         self.mic_task = None
         self.mic_on = False
         self.voice_output = True
+        self.voice_state = VoiceControlState(mic_listening=False, spoken_replies=True, wake_word_enabled=True)
         self.player = AudioPlayer(self._playback_idle)
         self.text_q = asyncio.Queue()
         self.tool_tasks = set()
         self.state = "idle"
         self._outage_reported = False
         self._wake_greet_until = 0.0
+        self._suppress_model_turn_until = 0.0
         self._last_model_text = ""
         self._last_model_ts = 0.0
         self._offline_vosk_rec = None
@@ -985,6 +1062,89 @@ class LiveManager:
         self._offline_last_speech_ts = 0.0
         self._reset_turn()
         ducker.start()
+
+    def _detect_offline_provider_label(self) -> str:
+        try:
+            if offline_ollama.is_available(timeout=0.4):
+                m = offline_ollama.select_best_model(vision=False)
+                if m:
+                    return f"Ollama ({m})"
+        except Exception:
+            pass
+        return "Local Commands"
+
+    def emit_voice_state(self):
+        snap = self.voice_state.snapshot()
+        _mic_stream_state["text_mode_locked"] = bool(snap.get("text_mode_locked", False))
+        emit("voice_state", **snap)
+
+    def stop_speaking_now(self):
+        """Immediately stop ongoing speech (both Gemini Live AudioPlayer and local SAPI TTS)
+        without disabling future spoken replies."""
+        self.player.interrupt()
+        self.stop_offline_tts()
+        self.voice_state.set_speaking(False)
+        if self.state == "speaking":
+            self.set_state(self._rest_state())
+        self.emit_voice_state()
+
+    def set_spoken_replies(self, on: bool):
+        """Independently toggle spoken replies ON/OFF without touching microphone listening or active AI session."""
+        enabled = bool(on)
+        self.voice_output = enabled
+        self.voice_state.set_spoken_replies(enabled)
+        if not enabled:
+            self.player.interrupt()
+            self.stop_offline_tts()
+            if self.state == "speaking":
+                self.set_state(self._rest_state())
+        self.emit_voice_state()
+
+    async def handle_voice_control_async(self, ctrl_name: str, from_voice: bool = False) -> dict:
+        """Apply a deterministic voice/chat control command across Offline, Online, and Hybrid modes
+        without requiring an AI response and without disconnecting Gemini Live."""
+        ctrl = (ctrl_name or "").strip().lower()
+        ack = ""
+        interrupted = False
+
+        if ctrl == "start_listening":
+            await self.mic_start()
+            ack = "Microphone listening is now on."
+        elif ctrl == "stop_listening":
+            await self.mic_stop(manual=True)
+            ack = "Microphone listening is now off. Chat and your session remain open."
+        elif ctrl == "enable_spoken_replies":
+            self.set_spoken_replies(True)
+            ack = "Spoken replies are now enabled."
+        elif ctrl == "disable_spoken_replies":
+            self.set_spoken_replies(False)
+            ack = "Spoken replies are now muted. I will respond in text."
+            interrupted = True
+        elif ctrl == "stop_speaking":
+            self.stop_speaking_now()
+            ack = "Stopped speaking."
+            interrupted = True
+        elif ctrl == "text_mode":
+            await self.mic_stop(manual=True)
+            self.set_spoken_replies(False)
+            self.voice_state.enter_text_mode()
+            ack = "Switched to text mode (microphone listening off, spoken replies off, wake-word reactivation paused)."
+            interrupted = True
+        elif ctrl == "voice_mode":
+            self.voice_state.exit_text_mode(mic_on=True, spoken_on=True)
+            self.set_spoken_replies(True)
+            await self.mic_start()
+            ack = "Switched to voice mode (microphone listening on, spoken replies on)."
+        else:
+            return {"ok": False, "control": ctrl, "message": f"Unknown voice control '{ctrl}'."}
+
+        self.emit_voice_state()
+        emit("model", text=ack)
+        emit("turn_end", interrupted=interrupted)
+        if self.voice_output and not interrupted and ctrl in ("start_listening", "enable_spoken_replies", "voice_mode"):
+            if not self.ready.is_set() or self.session is None:
+                self._speak_offline_tts(ack)
+        return {"ok": True, "control": ctrl, "message": ack, "state": self.voice_state.snapshot()}
 
     def _rest_state(self):
         return "listening" if self.mic_on else "idle"
@@ -1027,22 +1187,34 @@ class LiveManager:
 
     async def session_loop(self):
         if self.client is None:
+            self.voice_state.set_ai_backend("offline", self._detect_offline_provider_label())
             emit("status", v="offline")
+            self.emit_voice_state()
             emit("log", text="[Offline Mode] No GEMINI_API_KEY configured — Offline Local Commands (voice & chat) are active.")
             await self.stop_evt.wait()
             return
+        live_candidates = get_live_models()
+        model_idx = 0
         delay, first = 0.0, True
         while not self.closing:
+            active_model = live_candidates[min(model_idx, len(live_candidates) - 1)]
             connected, started = False, 0.0
+            if first:
+                self.voice_state.set_ai_backend("hybrid", f"Connecting ({active_model})...")
+            else:
+                self.voice_state.set_ai_backend("hybrid", self._detect_offline_provider_label())
             emit("status", v="connecting" if first else "offline")
+            self.emit_voice_state()
             first = False
             try:
-                async with self.client.aio.live.connect(model=MODEL, config=self.build_config()) as session:
+                async with self.client.aio.live.connect(model=active_model, config=self.build_config()) as session:
                     self.session = session
                     connected, started = True, time.monotonic()
                     self.ready.set()
                     self._outage_reported = False
+                    self.voice_state.set_ai_backend("online", f"Gemini Live ({active_model})")
                     emit("status", v="ready")
+                    self.emit_voice_state()
                     self.set_state(self._rest_state())
                     await self._receive_loop(session)
                 delay = 0.0 if time.monotonic() - started > 3 else 1.0
@@ -1053,13 +1225,28 @@ class LiveManager:
                 up = text.upper()
                 code = getattr(e, "code", None)
                 if code in (401, 403) or any(m in up for m in FATAL_MARKERS):
+                    self.voice_state.set_ai_backend("offline", self._detect_offline_provider_label())
                     emit("status", v="offline")
-                    emit("log", text="Gemini rejected the API key. Running in Offline Local Mode.")
+                    self.emit_voice_state()
+                    notice = "Gemini rejected the API key (check GEMINI_API_KEY in .env). Switched to Offline Mode."
+                    emit("log", text=notice)
+                    emit("error", text=notice)
                     await self.stop_evt.wait()
                     return
                 if not connected and any(m in up for m in MODEL_MARKERS):
+                    if model_idx + 1 < len(live_candidates):
+                        next_model = live_candidates[model_idx + 1]
+                        emit("log", text=f"[connection] Gemini Live model '{active_model}' was rejected ({e}); trying fallback '{next_model}'...")
+                        model_idx += 1
+                        self.resume_handle = None
+                        delay = 0.0
+                        continue
+                    self.voice_state.set_ai_backend("offline", self._detect_offline_provider_label())
                     emit("status", v="offline")
-                    emit("log", text=f"The Gemini Live model '{MODEL}' is not available ({e}). Running in Offline Local Mode.")
+                    self.emit_voice_state()
+                    notice = f"None of the configured Gemini Live models ({', '.join(live_candidates)}) are available ({e}). Switched to Offline Mode."
+                    emit("log", text=notice)
+                    emit("error", text=notice)
                     await self.stop_evt.wait()
                     return
                 emit("log", text=f"[connection] {text}")
@@ -1138,6 +1325,7 @@ class LiveManager:
                 emit("log", text=f"[audio] suppressed self-echo transcription: {txt!r}")
             else:
                 ducker.pulse(5.0)
+                offline_context.add_turn("user", txt)
                 emit("user", text=txt)
                 if IS_TTY:
                     print(f"You: {txt}", flush=True)
@@ -1145,9 +1333,18 @@ class LiveManager:
                     dec = _parse_voice_perm_decision(txt)
                     if dec:
                         _resolve_pending_perm_by_voice(dec)
+                vc_hit = match_voice_control_command(txt)
+                if vc_hit is not None:
+                    self._suppress_model_turn_until = time.monotonic() + 3.5
+                    self.player.interrupt()
+                    self.stop_offline_tts()
+                    t_vc = asyncio.create_task(self.handle_voice_control_async(vc_hit["control"], from_voice=True))
+                    self.tool_tasks.add(t_vc)
+                    t_vc.add_done_callback(self.tool_tasks.discard)
 
+        suppressing_ctrl_turn = time.monotonic() < float(getattr(self, "_suppress_model_turn_until", 0.0) or 0.0)
         mt = getattr(sc, "model_turn", None)
-        if mt:
+        if mt and not suppressing_ctrl_turn:
             for part in (mt.parts or []):
                 text = getattr(part, "text", None)
                 if text and not getattr(part, "thought", False):
@@ -1162,7 +1359,7 @@ class LiveManager:
                     self._on_audio(inline.data)
 
         ot = getattr(sc, "output_transcription", None)
-        if ot and getattr(ot, "text", None):
+        if ot and getattr(ot, "text", None) and not suppressing_ctrl_turn:
             self.turn_active = True
             self.turn_has_out_text = True
             self.turn_model_text += ot.text
@@ -1194,11 +1391,14 @@ class LiveManager:
 
     def _finish_turn(self):
         self._wake_greet_until = 0.0
+        self._suppress_model_turn_until = 0.0
         if self.turn_active:
             if not self.turn_has_out_text and self.fallback_text.strip():
                 emit("model", text=self.fallback_text)
                 if IS_TTY:
                     print(f"Nova: {self.fallback_text}", flush=True)
+            if self.turn_model_text.strip():
+                offline_context.add_turn("assistant", self.turn_model_text.strip())
             emit("turn_end", interrupted=False)
         sent_end = self.audio_in_turn and self.player.end_turn()
         self._reset_turn()
@@ -1234,6 +1434,14 @@ class LiveManager:
             try:
                 if fn is None:
                     raw_res = {"ok": False, "verified": False, "message": f"Unknown tool {call.name}"}
+                elif call.name == "manage_permission" and str((call.args or {}).get("action", "")).lower().strip() in ("grant", "allow", "yes", "enable"):
+                    raw_res = {
+                        "ok": False,
+                        "verified": False,
+                        "denied": True,
+                        "permission_denied": True,
+                        "message": "AI models cannot grant permissions. The user must approve permissions via the permission dialog.",
+                    }
                 else:
                     call_args = dict(call.args or {})
                     valid, reason = validate_proposed_action({"action": call.name, "arguments": call_args})
@@ -1296,47 +1504,176 @@ class LiveManager:
             except Exception as e:
                 emit("log", text=f"[tool] could not return results to Gemini: {type(e).__name__}: {e}")
 
+    def stop_offline_tts(self):
+        """Immediately interrupt active local SAPI speech output and invalidate any queued TTS worker."""
+        with self._tts_lock:
+            self._tts_epoch += 1
+            voice = getattr(self, "_sapi_voice", None)
+        if voice is not None:
+            try:
+                voice.Speak("", 1 | 2)  # SVSFlagsAsync | SVSFPurgeBeforeSpeak
+            except Exception:
+                pass
+        _mic_stream_state["speaking"] = False
+        _mic_stream_state["mute_until"] = 0.0
+        self.voice_state.set_speaking(False)
+
+    @staticmethod
+    def _create_sapi_voice():
+        """Create a Windows SAPI.SpVoice COM instance using comtypes (primary) or win32com (fallback).
+        Returns (voice_obj, cleanup_fn, engine_name) or (None, None, error_message)."""
+        errors = []
+        if sys.platform != "win32":
+            return None, None, "Offline Windows SAPI TTS is only supported on Windows."
+        # Engine 1: comtypes (bundled in .venv and requires no pywin32)
+        try:
+            import comtypes
+            import comtypes.client
+            comtypes.CoInitialize()
+            try:
+                voice = comtypes.client.CreateObject("SAPI.SpVoice", dynamic=True)
+                return voice, comtypes.CoUninitialize, "comtypes.SAPI"
+            except Exception:
+                comtypes.CoUninitialize()
+                raise
+        except Exception as exc1:
+            errors.append(f"comtypes: {type(exc1).__name__}: {exc1}")
+
+        # Engine 2: pywin32 (win32com.client)
+        try:
+            import pythoncom
+            import win32com.client
+            pythoncom.CoInitialize()
+            try:
+                voice = win32com.client.Dispatch("SAPI.SpVoice")
+                return voice, pythoncom.CoUninitialize, "win32com.SAPI"
+            except Exception:
+                pythoncom.CoUninitialize()
+                raise
+        except Exception as exc2:
+            errors.append(f"win32com: {type(exc2).__name__}: {exc2}")
+
+        return None, None, "; ".join(errors)
+
     def _speak_offline_tts(self, text: str):
-        """Speak a reply locally using Windows SAPI when offline and voice_output is enabled."""
-        if not self.voice_output or not text or IS_TTY:
+        """Speak a reply locally using interruptible, non-overlapping Windows SAPI (comtypes/win32com) when voice_output is enabled."""
+        if not self.voice_output or not text or IS_TTY or self.closing:
             return
-        clean = str(text).replace("[Offline Local Fallback]", "").strip()
+        clean = str(text).replace("[Offline Local Fallback]", "").replace("[Offline AI]", "").strip()
         if not clean:
             return
 
-        def _tts_worker(msg_text: str):
+        with self._tts_lock:
+            self._tts_epoch += 1
+            my_epoch = self._tts_epoch
+            prev_voice = getattr(self, "_sapi_voice", None)
+        if prev_voice is not None:
             try:
-                import comtypes.client
+                prev_voice.Speak("", 1 | 2)
             except Exception:
-                comtypes = None
+                pass
+
+        def _tts_worker(msg_text: str, epoch_id: int):
+            with self._tts_lock:
+                if epoch_id != self._tts_epoch or not self.voice_output or self.closing:
+                    return
+            cleanup_fn = None
             try:
                 _mic_stream_state["speaking"] = True
+                self.voice_state.set_speaking(True)
                 _mic_stream_state["mute_until"] = time.monotonic() + max(1.5, min(6.0, len(msg_text) * 0.065))
-                if sys.platform == "win32":
+                voice, cleanup_fn, info = self._create_sapi_voice()
+                if voice is None:
+                    if not getattr(self, "_tts_error_logged", False):
+                        self._tts_error_logged = True
+                        emit("log", text=f"[Offline TTS] Unavailable ({info}). Text replies still work.")
+                    return
+                with self._tts_lock:
+                    if epoch_id != self._tts_epoch or not self.voice_output or self.closing:
+                        return
+                    self._sapi_voice = voice
+                try:
+                    voice.Rate = 1
+                except Exception:
+                    pass
+                voice.Speak(msg_text, 2)  # SVSFPurgeBeforeSpeak (interrupts prior speech)
+            except Exception as exc:
+                emit("log", text=f"[Offline TTS] Speech playback error: {type(exc).__name__}: {exc}")
+            finally:
+                with self._tts_lock:
+                    if self._sapi_voice is not None and epoch_id == self._tts_epoch:
+                        self._sapi_voice = None
+                    if epoch_id == self._tts_epoch:
+                        _mic_stream_state["speaking"] = False
+                        self.voice_state.set_speaking(False)
+                        _mic_stream_state["mute_until"] = time.monotonic() + 0.35
+                if cleanup_fn is not None:
                     try:
-                        import win32com.client
-                        import pythoncom
-                        pythoncom.CoInitialize()
-                        try:
-                            voice = win32com.client.Dispatch("SAPI.SpVoice")
-                            voice.Rate = 1
-                            voice.Speak(msg_text)
-                        finally:
-                            pythoncom.CoUninitialize()
+                        cleanup_fn()
                     except Exception:
                         pass
-            finally:
-                _mic_stream_state["speaking"] = False
-                _mic_stream_state["mute_until"] = time.monotonic() + 0.35
 
-        threading.Thread(target=_tts_worker, args=(clean,), daemon=True).start()
+        threading.Thread(target=_tts_worker, args=(clean, my_epoch), name="nova-offline-tts", daemon=True).start()
 
     def execute_offline_action_sync(self, text: str, from_voice: bool = False) -> bool:
-        """Synchronous execution of deterministic offline commands or offline greeting.
-        Returns True if handled, False if unrecognized."""
+        """Synchronous execution of deterministic offline commands, offline model switching, or local Ollama AI agent.
+        Returns True if handled, False if unrecognized and no local Ollama model is available."""
         raw_clean = " ".join((text or "").strip().lower().split())
         if not raw_clean:
             return False
+
+        # Immediate cancellation of running offline agent tasks or offline speech
+        if raw_clean in ("stop task", "cancel task", "cancel offline task", "stop offline task", "abort task"):
+            offline_agent.cancel()
+            self.stop_offline_tts()
+            msg = "Stopped the active offline task."
+            emit("model", text=msg)
+            emit("turn_end", interrupted=True)
+            self.set_state(self._rest_state())
+            return True
+
+        # Switch local Ollama text or vision model, or toggle CPU-only fallback mode
+        import re as _re
+        m_vmod = _re.match(r"^(?:switch|use|set)\s+(?:offline|local)\s+vision\s+model\s+(?:to\s+)?([a-z0-9._:/-]+)$", raw_clean)
+        if m_vmod:
+            chosen_v = m_vmod.group(1).strip()
+            offline_ollama.preferred_vision_model = chosen_v
+            offline_ollama.save_config()
+            msg = f"Preferred offline Ollama vision model set to '{chosen_v}'."
+            offline_context.add_turn("user", text)
+            offline_context.add_turn("assistant", msg)
+            emit("model", text=msg)
+            emit("turn_end", interrupted=False)
+            self.set_state(self._rest_state())
+            return True
+        m_mod = _re.match(r"^(?:switch|use|set)\s+(?:offline|local)\s+model\s+(?:to\s+)?([a-z0-9._:/-]+)$", raw_clean)
+        if m_mod:
+            chosen = m_mod.group(1).strip()
+            offline_ollama.preferred_model = chosen
+            offline_ollama.save_config()
+            msg = f"Preferred offline Ollama model set to '{chosen}'."
+            offline_context.add_turn("user", text)
+            offline_context.add_turn("assistant", msg)
+            emit("model", text=msg)
+            emit("turn_end", interrupted=False)
+            self.set_state(self._rest_state())
+            return True
+        if raw_clean in ("offline cpu mode", "use cpu for offline ai", "enable cpu fallback"):
+            offline_ollama.cpu_only = True
+            offline_ollama.save_config()
+            msg = "Offline AI switched to CPU-only mode (0 VRAM usage)."
+            emit("model", text=msg)
+            emit("turn_end", interrupted=False)
+            self.set_state(self._rest_state())
+            return True
+        if raw_clean in ("offline gpu mode", "use gpu for offline ai", "disable cpu fallback"):
+            offline_ollama.cpu_only = False
+            offline_ollama.save_config()
+            msg = "Offline AI switched to GPU-accelerated mode with automatic CPU fallback."
+            emit("model", text=msg)
+            emit("turn_end", interrupted=False)
+            self.set_state(self._rest_state())
+            return True
 
         # Offline conversational greeting
         if raw_clean in ("hi", "hello", "hey", "hey nova", "nova", "are you there", "help", "offline help", "what can you do offline"):
@@ -1345,9 +1682,9 @@ class LiveManager:
                 "• Control Nova & Companion: close yourself, minimize nova, show/hide/toggle floating bot\n"
                 "• Manage Permissions: give permission for hand gesture / camera / mouse / screen / all, revoke all permissions, check permissions\n"
                 "• Hand Gesture & Mic: start/stop/pause/resume hand gesture, show/hide hand preview, enable auto nearest, set mic sensitivity\n"
-                "• Apps & Folders: open/close Calculator, Notepad, File Explorer, Paint, Task Manager, Settings, Chrome, Edge, VS Code; open/list/create folders\n"
-                "• Windows, Tabs, Clipboard & Controls: volume, brightness, minimize/maximize/close window, new/close/switch tab, scroll, read/clear clipboard, copy/paste/undo/save\n"
-                "• Productivity: take screenshots, check system/battery status, time/date, add/list tasks, remember/recall/list memories, or calculate math."
+                "• Apps & Folders: open/close Calculator, Notepad, File Explorer, Paint, Task Manager, Settings, Chrome, Edge, VS Code; open/list/create/search folders\n"
+                "• Local AI & Knowledge: check offline capabilities, index folder <path>, search local knowledge, or ask coding/reasoning questions via Ollama\n"
+                "• Productivity: volume, brightness, tabs, clipboard, screenshots, system/battery status, time/date, tasks, memories, or math."
             )
             emit("model", text=reply)
             emit("turn_end", interrupted=False)
@@ -1358,6 +1695,20 @@ class LiveManager:
 
         offline_act = match_offline_command(text)
         if offline_act is None:
+            # Hybrid Local AI fallback: if Ollama is running with an installed model, use OfflineAgent
+            if offline_ollama.is_available(timeout=0.8) and offline_ollama.select_best_model(vision=False):
+                self.set_state("thinking")
+                agent_res = offline_agent.run_turn(text)
+                if agent_res.get("ok"):
+                    used_model = agent_res.get("model") or "local Ollama"
+                    msg = f"[Offline AI • {used_model}] {agent_res.get('message', '')}".strip()
+                    emit("model", text=msg)
+                    emit("turn_end", interrupted=False)
+                    if from_voice or not self.ready.is_set():
+                        self._speak_offline_tts(agent_res.get("message", ""))
+                    self.set_state(self._rest_state())
+                    return True
+                self.set_state(self._rest_state())
             return False
 
         self.set_state("executing")
@@ -1404,6 +1755,8 @@ class LiveManager:
         if not msg:
             msg = f"Completed {offline_act.get('description') or act_name}."
 
+        offline_context.add_turn("user", text)
+        offline_context.add_turn("assistant", msg)
         emit("tool", name=act_name, result=msg)
         emit("model", text=msg)
         emit("turn_end", interrupted=False)
@@ -1424,13 +1777,17 @@ class LiveManager:
         try:
             import vosk
             vosk.SetLogLevel(-1)
-            model = vosk.Model(model_name="vosk-model-small-en-us-0.15")
-            grammar = json.dumps(OFFLINE_VOICE_PHRASES)
-            self._offline_vosk_rec = vosk.KaldiRecognizer(model, 16000, grammar)
+            # Reuse cached Vosk model to save ~120 MB RAM; use unconstrained vocabulary so free-form
+            # spoken questions can reach Ollama AI while control/system commands are still matched first!
+            model = _get_vosk_model()
+            if model is None:
+                self._offline_vosk_failed = True
+                return None
+            self._offline_vosk_rec = vosk.KaldiRecognizer(model, 16000)
             return self._offline_vosk_rec
         except Exception as e:
             self._offline_vosk_failed = True
-            emit("log", text=f"[Offline Voice] Vosk model unavailable: {e}")
+            emit("log", text=f"[Offline Voice] Vosk recognizer unavailable: {e}")
             return None
 
     async def _process_offline_voice_pcm(self, raw_pcm: bytes, is_speech: bool, now: float):
@@ -1462,9 +1819,20 @@ class LiveManager:
             return
 
         emit("user", text=spoken)
+        vc_hit = match_voice_control_command(spoken)
+        if vc_hit is not None:
+            await self.handle_voice_control_async(vc_hit["control"], from_voice=True)
+            return
         handled = await self._execute_offline_action(spoken, from_voice=True)
         if not handled:
-            emit("model", text=f"I heard '{spoken}', which requires an online Gemini Live connection. Try an offline command like 'open calculator', 'mute volume', 'take screenshot', or 'system status'.")
+            emit(
+                "model",
+                text=(
+                    f"I heard '{spoken}'. For free-form offline voice answers, start Ollama with a local model "
+                    "(e.g. 'ollama pull qwen2.5:3b') or connect to Gemini Live. Deterministic commands like "
+                    "'open calculator', 'mute volume', 'system status', or 'stop listening' work anytime."
+                ),
+            )
             emit("turn_end", interrupted=False)
 
     async def text_worker(self):
@@ -1494,6 +1862,8 @@ class LiveManager:
                                  turn_complete=True
                              )
                     sent = True
+                    if not text.startswith("[System notification:"):
+                        offline_context.add_turn("user", text)
                     break
                 except asyncio.CancelledError:
                     raise
@@ -1506,33 +1876,45 @@ class LiveManager:
                     emit("error", text="Gemini Live is currently offline. Local commands (e.g., 'open calculator', 'open downloads', 'mute volume', 'take screenshot', 'system status', 'what time is it') work offline right now!")
 
     async def mic_start(self):
-        if self.mic_task is not None and not self.mic_task.done():
-            emit("mic", v="on" if self.mic_on else "starting")
-            return
-        if sd is None:
-            emit("mic", v="error", text=f"Microphone unavailable (audio library problem: {_SD_ERROR}).")
-            return
-        emit("mic", v="starting")
-        self.mic_task = asyncio.create_task(self._mic_main())
+        async with self._mic_lock:
+            if self.closing:
+                return
+            if self.mic_task is not None and not self.mic_task.done():
+                emit("mic", v="on" if self.mic_on else "starting")
+                self.voice_state.set_mic_listening(True)
+                self.emit_voice_state()
+                return
+            if sd is None:
+                emit("mic", v="error", text=f"Microphone unavailable (audio library problem: {_SD_ERROR}).")
+                self.voice_state.set_mic_listening(False)
+                self.emit_voice_state()
+                return
+            emit("mic", v="starting")
+            self.voice_state.set_mic_listening(True)
+            self.emit_voice_state()
+            self.mic_task = asyncio.create_task(self._mic_main())
 
-    async def mic_stop(self):
-        task, self.mic_task = self.mic_task, None
-        if task is not None:
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
-        self.mic_on = False
-        _mic_stream_state["active"] = False
-        ducker.set_listening(False)
-        emit("mic", v="off")
-        sess = self.session
-        if sess is not None:
-            try:
-                async with self.send_lock:
-                    await sess.send_realtime_input(audio_stream_end=True)
-            except Exception:
-                pass
-        if self.state == "listening":
-            self.set_state("idle")
+    async def mic_stop(self, manual: bool = True):
+        async with self._mic_lock:
+            task, self.mic_task = self.mic_task, None
+            if task is not None:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            self.mic_on = False
+            _mic_stream_state["active"] = False
+            ducker.set_listening(False)
+            self.voice_state.set_mic_listening(False, manual=manual)
+            emit("mic", v="off")
+            self.emit_voice_state()
+            sess = self.session
+            if sess is not None:
+                try:
+                    async with self.send_lock:
+                        await sess.send_realtime_input(audio_stream_end=True)
+                except Exception:
+                    pass
+            if self.state == "listening":
+                self.set_state("idle")
 
     async def _send_audio(self, data):
         global MIC_NOISE_GATE_RMS
@@ -1674,7 +2056,9 @@ class LiveManager:
                     failures += 1
                     emit("log", text=f"[microphone] {type(e).__name__}: {e}")
                     if failures >= 3:
+                        self.voice_state.set_mic_listening(False, manual=False)
                         emit("mic", v="error", text=f"Microphone unavailable: {e}")
+                        self.emit_voice_state()
                         if self.state == "listening":
                             self.set_state("idle")
                         return
@@ -1762,6 +2146,8 @@ class LiveManager:
                                 emit("turn_end", interrupted=False)
                                 continue
                             elif kind == "cancel_operation":
+                                offline_agent.cancel()
+                                self.stop_offline_tts()
                                 if _active_workflow_player is not None:
                                     _active_workflow_player.cancel()
                                 if workflow_recorder.is_recording:
@@ -1772,10 +2158,19 @@ class LiveManager:
                                 emit("model", text="Cancelled active operation.")
                                 emit("turn_end", interrupted=False)
                                 continue
-                        # Fast-path: if Gemini Live is not connected right now, execute offline commands in 0ms!
-                        if not self.ready.is_set() or self.session is None:
-                            if await self._execute_offline_action(text, from_voice=False):
-                                continue
+                        if " ".join(text.lower().split()) in ("stop task", "cancel task", "cancel offline task", "stop offline task", "abort task"):
+                            offline_agent.cancel()
+                            self.stop_speaking_now()
+                            emit("model", text="Stopped the active offline task.")
+                            emit("turn_end", interrupted=True)
+                            self.set_state(self._rest_state())
+                            continue
+                        # Control Layer: intercept voice/chat listening & spoken-reply controls before AI generation
+                        vc_hit = match_voice_control_command(text)
+                        if vc_hit is not None:
+                            await self.handle_voice_control_async(vc_hit["control"], from_voice=False)
+                            continue
+                        # Route through text_q so command_loop never blocks permission dialog responses (perm_response) or cancellation
                         self.text_q.put_nowait(text)
                 elif cmd == "walkthrough_cmd":
                     w_act = msg.get("action", "status")
@@ -1824,32 +2219,53 @@ class LiveManager:
                 elif cmd in ("mic_start", "voice_start"):
                     await self.mic_start()
                 elif cmd in ("mic_stop", "voice_stop"):
-                    await self.mic_stop()
+                    await self.mic_stop(manual=True)
+                elif cmd == "stop_speaking":
+                    self.stop_speaking_now()
+                elif cmd == "voice_control":
+                    await self.handle_voice_control_async(str(msg.get("control", "")), from_voice=bool(msg.get("from_voice", False)))
+                elif cmd == "wake_state":
+                    self.voice_state.set_wake_word(
+                        enabled=msg.get("enabled"),
+                        active=msg.get("active"),
+                    )
+                    self.emit_voice_state()
+                elif cmd == "text_mode_sync":
+                    if bool(msg.get("active", False)):
+                        await self.mic_stop(manual=True)
+                        self.set_spoken_replies(False)
+                        self.voice_state.enter_text_mode()
+                        self.emit_voice_state()
                 elif cmd == "wake_greet":
                     ducker.pulse(8.0)
-                    await self.mic_start()
                     trailing_cmd = str(msg.get("command", "") or "").strip()
+                    vc_wake = match_voice_control_command(trailing_cmd) if trailing_cmd else None
+                    if vc_wake is not None:
+                        # Execute voice-control command directly without secretly enabling full conversational listening
+                        emit("user", text=trailing_cmd)
+                        await self.handle_voice_control_async(vc_wake["control"], from_voice=True)
+                        continue
+                    if self.voice_state.text_mode_locked:
+                        # Text Mode is locked: never automatically reactivate mic or voice mode on a wake event
+                        emit("log", text="[Text Mode] Ignored automatic wake-word reactivation while Text Mode is active.")
+                        self.emit_voice_state()
+                        continue
+                    await self.mic_start()
                     if trailing_cmd:
                         emit("user", text=trailing_cmd)
-                        if not self.ready.is_set() or self.session is None or match_offline_command(trailing_cmd) is not None:
-                            if await self._execute_offline_action(trailing_cmd, from_voice=True):
-                                continue
                         self.text_q.put_nowait(trailing_cmd)
                     elif not self.ready.is_set() or self.session is None:
                         emit("model", text="Hey! I'm here (Offline Local Mode). What can I do for you?")
                         emit("turn_end", interrupted=False)
-                        self._speak_offline_tts("Hey! I'm here. What can I do for you?")
+                        if self.voice_output:
+                            self._speak_offline_tts("Hey! I'm here. What can I do for you?")
                     else:
                         self._wake_greet_until = time.monotonic() + 2.8
                         self.text_q.put_nowait(
                             "[System notification: The user just said 'Hey Nova' to wake you up. Greet the user warmly and concisely in English with 'Hey! I'm here. What can I do for you?', and wait for their command.]"
                         )
                 elif cmd == "voice_output":
-                    self.voice_output = bool(msg.get("on", msg.get("enabled", True)))
-                    if not self.voice_output:
-                        self.player.interrupt()
-                        if self.state == "speaking":
-                            self.set_state(self._rest_state())
+                    self.set_spoken_replies(bool(msg.get("on", msg.get("enabled", True))))
                 elif cmd == "perm_response":
                     req_id = msg.get("id")
                     decision = msg.get("decision", "deny")
@@ -1888,9 +2304,36 @@ class LiveManager:
                 emit("log", text=f"[command] {cmd} failed: {type(e).__name__}: {e}")
 
     async def shutdown(self):
+        """Idempotent full backend cleanup: stops mic, TTS, AudioPlayer, offline agent,
+        workflow replay, pending permission waiters, gestures, Gemini session, and async tasks."""
+        if self._shutdown_done:
+            return
+        self._shutdown_done = True
         self.closing = True
         self.stop_evt.set()
-        gesture_manager.stop()
+        try:
+            offline_agent.cancel()
+        except Exception:
+            pass
+        try:
+            if _active_workflow_player is not None:
+                _active_workflow_player.cancel()
+        except Exception:
+            pass
+        # Release any worker threads waiting on UI permission or workflow step confirmation
+        with _pending_perms_lock:
+            for info in _pending_perms.values():
+                info["decision"] = "deny"
+                info["event"].set()
+        with _pending_step_approvals_lock:
+            for info in _pending_step_approvals.values():
+                info["approved"] = False
+                info["event"].set()
+        self.stop_speaking_now()
+        try:
+            gesture_manager.stop()
+        except Exception:
+            pass
         task, self.mic_task = self.mic_task, None
         if task is not None:
             task.cancel()
@@ -1899,10 +2342,20 @@ class LiveManager:
             t.cancel()
         if self.tool_tasks:
             await asyncio.gather(*list(self.tool_tasks), return_exceptions=True)
-        await asyncio.to_thread(self.player.close)
-        ducker.stop()
+        self.tool_tasks.clear()
+        try:
+            await asyncio.to_thread(self.player.close)
+        except Exception:
+            pass
+        try:
+            ducker.stop()
+        except Exception:
+            pass
         self.mic_on = False
         _mic_stream_state["active"] = False
+        self.voice_state.set_mic_listening(False, manual=False)
+        self.voice_state.set_speaking(False)
+        self.emit_voice_state()
         self.set_state("idle")
 
 
@@ -1989,7 +2442,7 @@ async def amain():
     _ipc_loop_running = True
     load_dotenv(HERE / ".env")
     key = (os.getenv("GEMINI_API_KEY") or "").strip()
-    MODEL = os.getenv("MODEL", "gemini-3.8-live")
+    MODEL = (os.getenv("MODEL") or DEFAULT_LIVE_MODEL).strip()
     client = genai.Client(api_key=key) if key else None
     if not key:
         emit("log", text="GEMINI_API_KEY is missing from .env — starting in Offline Local Mode.")
