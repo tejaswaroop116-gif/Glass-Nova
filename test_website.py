@@ -29,6 +29,7 @@ class _PageParser(HTMLParser):
         self.meta: list[dict[str, str]] = []
         self.links: list[dict[str, str]] = []
         self.anchors: list[dict[str, str]] = []
+        self.images: list[dict[str, str]] = []
         self.headings: list[int] = []
         self.tags: set[str] = set()
         self.ids: set[str] = set()
@@ -52,6 +53,8 @@ class _PageParser(HTMLParser):
             self.links.append(d)
         elif t == "a":
             self.anchors.append(d)
+        elif t == "img":
+            self.images.append(d)
         elif t in ("h1", "h2", "h3", "h4", "h5", "h6"):
             self.headings.append(int(t[1]))
         elif t == "script" and d.get("type", "").lower() == "application/ld+json":
@@ -131,10 +134,19 @@ class WebsiteValidationTests(unittest.TestCase):
         self.assertEqual(meta_by_prop.get("og:url"), SITE_URL)
         self.assertTrue(meta_by_prop.get("og:title"))
         self.assertTrue(meta_by_prop.get("og:description"))
-        self.assertEqual(meta_by_name.get("twitter:card"), "summary")
+        self.assertIn(meta_by_name.get("twitter:card"), ("summary", "summary_large_image"))
         self.assertEqual(meta_by_name.get("twitter:url"), SITE_URL)
         self.assertTrue(meta_by_name.get("twitter:title"))
         self.assertTrue(meta_by_name.get("twitter:description"))
+
+        # Verify all <img> elements have descriptive alt text and exist on disk
+        self.assertGreaterEqual(len(self.parser.images), 6, "Expected real app, permission, and 4 companion images")
+        for img in self.parser.images:
+            src = img.get("src", "").strip()
+            alt = img.get("alt", "").strip()
+            self.assertTrue(alt and len(alt) >= 10, f"Image missing descriptive alt text: {src}")
+            self.assertTrue((DOCS / src).is_file(), f"Broken image asset in docs/: {src}")
+        self.assertNotIn("mummy", self.html_text.lower(), "Mummy companion must not appear on the website")
 
         # Valid JSON-LD SoftwareApplication
         self.assertEqual(len(self.parser.json_ld_blocks), 1)
