@@ -6,7 +6,7 @@ Thank you for your interest in contributing to **Glass Nova**!
 
 1. Fork the repository and clone your fork:
    ```powershell
-   git clone https://github.com/tejaswaroop116-gif/Glass-Nova.git
+   git clone https://github.com/tejaswaroop30/Glass-Nova.git
    cd Glass-Nova
    ```
 2. Create a Python 3.11+ virtual environment and install dependencies:

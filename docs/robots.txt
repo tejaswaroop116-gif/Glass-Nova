@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://tejaswaroop116-gif.github.io/Glass-Nova/sitemap.xml
+Sitemap: https://tejaswaroop30.github.io/Glass-Nova/sitemap.xml

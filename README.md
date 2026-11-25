@@ -1,14 +1,14 @@
 # Glass Nova — AI Desktop Assistant for Windows
 
-[![Glass Nova Tests](https://github.com/tejaswaroop116-gif/Glass-Nova/actions/workflows/tests.yml/badge.svg)](https://github.com/tejaswaroop116-gif/Glass-Nova/actions/workflows/tests.yml)
+[![Glass Nova Tests](https://github.com/tejaswaroop30/Glass-Nova/actions/workflows/tests.yml/badge.svg)](https://github.com/tejaswaroop30/Glass-Nova/actions/workflows/tests.yml)
 ![Platform: Windows 10/11](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011-0078D6?logo=windows)
 ![Python: 3.11%2B](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![UI: PySide6](https://img.shields.io/badge/UI-PySide6-41CD52)
 
 **Glass Nova** is an open-source, AI-powered Windows desktop assistant built in Python and PySide6. It combines real-time **Gemini Live** voice and chat interaction, offline `"Hey Nova"` wake-word activation, **Offline Local Mode**, verified **Windows desktop automation**, **screen and document understanding**, **webcam hand-gesture mouse control**, and **animated desktop companions** behind a fail-closed permission system.
 
-> **Project Website (GitHub Pages):** https://tejaswaroop116-gif.github.io/Glass-Nova/ *(once GitHub Pages is enabled from `/docs`)*
-> **Repository:** https://github.com/tejaswaroop116-gif/Glass-Nova
+> **Project Website (GitHub Pages):** https://tejaswaroop30.github.io/Glass-Nova/ *(once GitHub Pages is enabled from `/docs`)*
+> **Repository:** https://github.com/tejaswaroop30/Glass-Nova
 
 ---
 
@@ -93,14 +93,14 @@ Glass Nova runs as a two-process desktop architecture: a frameless PySide6 glass
 ### Option 1: One-Click Setup & Launch (Windows)
 1. Clone the repository:
    ```powershell
-   git clone https://github.com/tejaswaroop116-gif/Glass-Nova.git
+   git clone https://github.com/tejaswaroop30/Glass-Nova.git
    cd Glass-Nova
    ```
 2. Double-click **`Start_Glass_Nova.bat`** (automatically creates `.venv`, installs dependencies from `requirements.txt`, copies `.env.example` to `.env`, and launches `ui.py`).
 
 ### Option 2: Manual Setup (PowerShell)
 ```powershell
-git clone https://github.com/tejaswaroop116-gif/Glass-Nova.git
+git clone https://github.com/tejaswaroop30/Glass-Nova.git
 cd Glass-Nova
 py -3 -m venv .venv
 .venv\Scripts\activate
