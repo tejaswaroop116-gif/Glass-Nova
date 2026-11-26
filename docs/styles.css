@@ -1353,11 +1353,18 @@ h3 {
    ========================================================= */
 .spiral-roadmap {
   position: relative;
-  height: 620vh;
+  height: 880vh;
   background: #03050a;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   padding: 0;
+}
+
+/* Avoid expensive WebGL framebuffer blur readback on fixed navbar while #roadmap is active */
+body.roadmap-active .nav-shell {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: rgba(6, 10, 18, 0.92);
 }
 
 .sr-sticky {
@@ -1622,18 +1629,19 @@ h3 {
 
 .sr-overview-label {
   position: absolute;
+  top: 0;
+  left: 0;
   z-index: 4;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.35s, filter 0.35s;
-  transform: translate(-50%, -50%);
+  transition: opacity 0.3s ease;
   font-size: 10px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: #a9dfff;
   text-shadow: 0 0 12px #1b89b9;
   white-space: nowrap;
-  filter: blur(1px);
+  will-change: transform, opacity;
 }
 .sr-overview-label b {
   display: block;

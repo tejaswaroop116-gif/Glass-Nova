@@ -62,11 +62,11 @@ if (!journey || !sticky || !container) {
     curvePoints.push(new THREE.Vector3(Math.cos(a) * radius, t * height - height / 2, Math.sin(a) * radius));
   }
   const curve = new THREE.CatmullRomCurve3(curvePoints);
-  const trackBase = new THREE.Mesh(new THREE.TubeGeometry(curve, 900, 0.055, 10, false), new THREE.MeshBasicMaterial({ color: 0x16415b, transparent: true, opacity: 0.42, toneMapped: false }));
+  const trackBase = new THREE.Mesh(new THREE.TubeGeometry(curve, 480, 0.055, 8, false), new THREE.MeshBasicMaterial({ color: 0x16415b, transparent: true, opacity: 0.42, toneMapped: false }));
   scene.add(trackBase);
-  const trackGlow = new THREE.Mesh(new THREE.TubeGeometry(curve, 900, 0.035, 8, false), new THREE.MeshBasicMaterial({ color: 0x35baff, transparent: true, opacity: 0.62, toneMapped: false }));
+  const trackGlow = new THREE.Mesh(new THREE.TubeGeometry(curve, 480, 0.035, 6, false), new THREE.MeshBasicMaterial({ color: 0x35baff, transparent: true, opacity: 0.62, toneMapped: false }));
   scene.add(trackGlow);
-  const trackCore = new THREE.Mesh(new THREE.TubeGeometry(curve, 900, 0.012, 6, false), new THREE.MeshBasicMaterial({ color: 0xc2f5ff, transparent: true, opacity: 0.65, toneMapped: false }));
+  const trackCore = new THREE.Mesh(new THREE.TubeGeometry(curve, 480, 0.012, 5, false), new THREE.MeshBasicMaterial({ color: 0xc2f5ff, transparent: true, opacity: 0.65, toneMapped: false }));
   scene.add(trackCore);
 
   // Permanent central metallic pole
@@ -339,8 +339,24 @@ if (!journey || !sticky || !container) {
   const outroBanner = document.getElementById('sr-outro');
   const navButtons = Array.from(document.querySelectorAll('#sr-waypointNav button'));
 
-  let progress = 0, targetProgress = 0, activeMilestone = 0, lastRenderedSt = -2;
-  let rafId = 0, isInView = false;
+  let progress = 0, targetProgress = 0, activeMilestone = 0, lastRenderedSt = -2, lastStatusText = '';
+  let rafId = 0, isInView = false, lastFrameTime = performance.now(), labelsVisible = true;
+  const overviewPoints = milestoneT.map((t, i) => {
+    const wp = curve.getPoint(t).clone();
+    wp.x += (i % 2 === 0 ? -1 : 1) * 2.35;
+    wp.z += 0.45;
+    return wp;
+  });
+  const tmpProj = new THREE.Vector3();
+
+  function readScrollTarget() {
+    const r = journey.getBoundingClientRect();
+    const range = Math.max(1, journey.offsetHeight - window.innerHeight);
+    targetProgress = Math.max(0, Math.min(1, -r.top / range));
+    const fullyInside = r.top <= 40 && r.bottom >= window.innerHeight - 40;
+    window.__novaRoadmapActive = fullyInside;
+    document.body.classList.toggle('roadmap-active', fullyInside);
+  }
 
   function smooth(x) {
     x = Math.max(0, Math.min(1, x));
@@ -367,9 +383,6 @@ if (!journey || !sticky || !container) {
   }
 
   function update() {
-    const r = journey.getBoundingClientRect();
-    const range = Math.max(1, journey.offsetHeight - window.innerHeight);
-    targetProgress = Math.max(0, Math.min(1, -r.top / range));
     if (bar) bar.style.width = (progress * 100).toFixed(1) + '%';
 
     const q = journeyState();
@@ -398,18 +411,21 @@ if (!journey || !sticky || !container) {
         heading.textContent = content[st][1];
         desc.textContent = content[st][2];
         featureList.innerHTML = featureSets[st].map((x) => '<li>' + x + '</li>').join('');
+        chapter.textContent = content[st][0].replace(' / ', ' — ');
+        scrolllabel.textContent = 'Waypoint ' + (st + 1) + ' · reached';
       }
-      chapter.textContent = content[st][0].replace(' / ', ' — ');
-      scrolllabel.textContent = 'Waypoint ' + (st + 1) + ' · reached';
 
       const statusText = progress >= 0.995 ? 'COMPLETED' : (st < q.seg ? 'COMPLETED' : (st === q.seg ? 'IN PROGRESS' : 'UPCOMING'));
-      statusEl.textContent = statusText;
-      statusEl.className = 'sr-milestone-status ' + (statusText === 'COMPLETED' ? 'complete' : statusText === 'IN PROGRESS' ? 'current' : 'upcoming');
+      if (statusText !== lastStatusText) {
+        lastStatusText = statusText;
+        statusEl.textContent = statusText;
+        statusEl.className = 'sr-milestone-status ' + (statusText === 'COMPLETED' ? 'complete' : statusText === 'IN PROGRESS' ? 'current' : 'upcoming');
+      }
 
       if (progress > 0.12 && q.ride < 0.975 && window.innerWidth > 700) {
         const exitX = panelExit * Math.min(900, stageW * 0.95);
         const enterX = (1 - panelEnter) * Math.min(240, stageW * 0.26);
-        info.style.transform = `translateY(-50%) translateX(${st === q.seg ? exitX : enterX}px)`;
+        info.style.transform = `translate3d(${(st === q.seg ? exitX : enterX).toFixed(1)}px, -50%, 0)`;
         info.style.opacity = String(st === q.seg ? 1 - panelExit : panelEnter);
       } else {
         info.style.transform = '';
@@ -421,12 +437,19 @@ if (!journey || !sticky || !container) {
     }
 
     if (progress <= 0.075) {
-      chapter.textContent = 'OVERVIEW';
-      scrolllabel.textContent = 'Scroll to zoom into waypoint 01';
+      if (lastRenderedSt !== -1) {
+        lastRenderedSt = -1;
+        chapter.textContent = 'OVERVIEW';
+        scrolllabel.textContent = 'Scroll to zoom into waypoint 01';
+      }
     } else if (progress >= 0.975) {
-      chapter.textContent = 'THE FUTURE';
-      scrolllabel.textContent = 'Journey complete · continue scrolling';
-    } else if (!active) {
+      if (lastRenderedSt !== 99) {
+        lastRenderedSt = 99;
+        chapter.textContent = 'THE FUTURE';
+        scrolllabel.textContent = 'Journey complete · continue scrolling';
+      }
+    } else if (!active && lastRenderedSt !== -3) {
+      lastRenderedSt = -3;
       chapter.textContent = 'IN TRANSIT';
       scrolllabel.textContent = 'Following the spiral · in transit';
     }
@@ -473,34 +496,41 @@ if (!journey || !sticky || !container) {
     key.intensity = 120 + finale * 65;
     fill.intensity = 85 + finale * 45;
 
-    overviewLabels.forEach((el, i) => {
-      const show = progress < 0.045;
-      const wp = curve.getPoint(milestoneT[i]).clone();
-      wp.x += (i % 2 === 0 ? -1 : 1) * 2.35;
-      wp.z += 0.45;
-      wp.project(camera);
-      const x = (wp.x * 0.5 + 0.5) * stageW;
-      const y = (-wp.y * 0.5 + 0.5) * stageH;
-      el.style.left = x + 'px';
-      el.style.top = y + 'px';
-      el.style.opacity = show && wp.z < 1 ? '0.92' : '0';
-      el.style.filter = show ? 'blur(0)' : 'blur(2px)';
-    });
+    const showLabels = progress < 0.05;
+    if (showLabels || labelsVisible) {
+      labelsVisible = showLabels;
+      overviewLabels.forEach((el, i) => {
+        if (!showLabels) {
+          el.style.opacity = '0';
+          return;
+        }
+        tmpProj.copy(overviewPoints[i]).project(camera);
+        const x = (tmpProj.x * 0.5 + 0.5) * stageW;
+        const y = (-tmpProj.y * 0.5 + 0.5) * stageH;
+        el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -50%)`;
+        el.style.opacity = tmpProj.z < 1 ? '0.92' : '0';
+      });
+    }
   }
 
   function renderFrame() {
+    const now = performance.now();
+    const dt = Math.min(0.05, Math.max(0.001, (now - lastFrameTime) * 0.001));
+    lastFrameTime = now;
+    const frameScale = dt * 60;
+
     const scrollDelta = targetProgress - progress;
-    progress += scrollDelta * (reduceMotion ? 1 : Math.min(0.22, Math.max(0.085, 0.085 + Math.abs(scrollDelta) * 0.65)));
-    if (Math.abs(targetProgress - progress) < 0.0005) progress = targetProgress;
+    const damp = 1 - Math.pow(1 - Math.min(0.20, Math.max(0.08, 0.08 + Math.abs(scrollDelta) * 0.55)), frameScale);
+    progress += scrollDelta * (reduceMotion ? 1 : damp);
+    if (Math.abs(targetProgress - progress) < 0.0004) progress = targetProgress;
     update();
 
     const q = journeyState(), p = progress, t = q.t;
     if (!reduceMotion) {
-      const now = performance.now();
       ambientMotes.forEach((o) => {
-        o.mesh.position.y += o.speed * 0.006;
+        o.mesh.position.y += o.speed * 0.006 * frameScale;
         if (o.mesh.position.y > height / 2 + 4) o.mesh.position.y = -height / 2 - 4;
-        o.mesh.position.x += Math.sin(now * 0.0003 + o.phase) * 0.0015;
+        o.mesh.position.x += Math.sin(now * 0.0003 + o.phase) * 0.0015 * frameScale;
         o.mesh.material.opacity = 0.22 + 0.25 * (0.5 + 0.5 * Math.sin(now * 0.001 + o.phase));
       });
     }
@@ -535,15 +565,17 @@ if (!journey || !sticky || !container) {
     const overviewLook = new THREE.Vector3(0, 0, 0);
     const zoomBlend = smooth(Math.min(1, p / 0.12));
     const desiredPos = overviewPos.lerp(rideCam, zoomBlend);
-    camera.position.lerp(desiredPos, reduceMotion ? 1 : 0.12);
+    const posLerp = reduceMotion ? 1 : 1 - Math.pow(1 - 0.12, frameScale);
+    const lookLerp = reduceMotion ? 1 : 1 - Math.pow(1 - 0.16, frameScale);
+    camera.position.lerp(desiredPos, posLerp);
     const desiredLook = overviewLook.lerp(lookTarget, zoomBlend);
     camera.userData.lookTarget ??= new THREE.Vector3();
-    camera.userData.lookTarget.lerp(desiredLook, reduceMotion ? 1 : 0.16);
+    camera.userData.lookTarget.lerp(desiredLook, lookLerp);
     camera.lookAt(camera.userData.lookTarget);
 
     const curvatureBank = Math.max(-0.055, Math.min(0.055, (tangent.x - tangent.z) * 0.045));
     camera.userData.bank ??= 0;
-    camera.userData.bank += (curvatureBank - camera.userData.bank) * 0.08;
+    camera.userData.bank += (curvatureBank - camera.userData.bank) * (1 - Math.pow(1 - 0.08, frameScale));
     camera.rotation.z = camera.userData.bank;
     camera.fov = 54 - 13 * zoomBlend;
     camera.updateProjectionMatrix();
@@ -561,6 +593,7 @@ if (!journey || !sticky || !container) {
 
   function startLoop() {
     if (!rafId && isInView && !document.hidden) {
+      lastFrameTime = performance.now();
       rafId = requestAnimationFrame(renderFrame);
     }
   }
@@ -613,16 +646,20 @@ if (!journey || !sticky || !container) {
     });
   }
 
-  // Only render Three.js when #roadmap is visible in viewport (saves GPU on other sections)
+  // Only render Three.js when #roadmap is visible in viewport (and pause #nova-webgl behind it)
   if ('IntersectionObserver' in window) {
     const visObs = new IntersectionObserver((entries) => {
       isInView = Boolean(entries[0] && entries[0].isIntersecting);
       if (isInView) {
-        update();
+        readScrollTarget();
         startLoop();
-      } else if (rafId) {
-        cancelAnimationFrame(rafId);
-        rafId = 0;
+      } else {
+        window.__novaRoadmapActive = false;
+        document.body.classList.remove('roadmap-active');
+        if (rafId) {
+          cancelAnimationFrame(rafId);
+          rafId = 0;
+        }
       }
     }, { rootMargin: '150px 0px' });
     visObs.observe(journey);
@@ -632,7 +669,7 @@ if (!journey || !sticky || !container) {
   }
 
   window.addEventListener('scroll', () => {
-    if (isInView) update();
+    if (isInView) readScrollTarget();
   }, { passive: true });
 
   window.addEventListener('resize', () => {

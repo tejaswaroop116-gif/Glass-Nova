@@ -59,6 +59,12 @@
   }, { passive: true });
 
   function draw() {
+    if (window.__novaRoadmapActive) {
+      if (!reduceMotion && !document.hidden) {
+        rafId = requestAnimationFrame(draw);
+      }
+      return;
+    }
     ctx.clearRect(0, 0, W, H);
 
     mouse.x += (mouse.tx - mouse.x) * 0.06;
