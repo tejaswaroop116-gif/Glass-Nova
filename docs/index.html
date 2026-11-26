@@ -1,1467 +1,723 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Glass Nova — AI Desktop Assistant for Windows</title>
-  <meta name="description" content="Glass Nova is a Python &amp; PySide6 AI desktop assistant for Windows 10/11 featuring Gemini Live voice chat, offline Hey Nova wake word, verified automation, screen understanding, and companions." />
-  <meta name="robots" content="index, follow" />
-  <meta name="theme-color" content="#030712" />
-  <link rel="canonical" href="https://tejaswaroop30.github.io/Glass-Nova/" />
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3CradialGradient id='g' cx='38%25' cy='32%25' r='65%25'%3E%3Cstop offset='0%25' stop-color='%23e0ffff'/%3E%3Cstop offset='45%25' stop-color='%2322d3ee'/%3E%3Cstop offset='100%25' stop-color='%231d4ed8'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='28' fill='url(%23g)' stroke='%23a5f3fc' stroke-width='3'/%3E%3C/svg%3E" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Glass Nova — Cinematic Windows AI Desktop Assistant</title>
+  <meta name="description" content="Glass Nova is an open-source Windows 10/11 AI desktop assistant with Online Gemini Live, Offline Ollama &amp; Vosk voice, fail-closed permissions, and 4 animated desktop companions.">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#040509">
+  <link rel="canonical" href="https://tejaswaroop30.github.io/Glass-Nova/">
+  <link rel="icon" type="image/png" href="assets/companion-robot.png">
 
-  <!-- Open Graph / Social Sharing -->
-  <meta property="og:type" content="website" />
-  <meta property="og:locale" content="en_US" />
-  <meta property="og:title" content="Glass Nova — AI Desktop Assistant for Windows" />
-  <meta property="og:description" content="Frameless Python &amp; PySide6 AI desktop assistant for Windows 10/11 with Gemini Live voice chat, Offline Local Mode, fail-closed permissions, verified desktop automation, and animated companions." />
-  <meta property="og:url" content="https://tejaswaroop30.github.io/Glass-Nova/" />
-  <meta property="og:site_name" content="Glass Nova" />
-  <meta property="og:image" content="https://tejaswaroop30.github.io/Glass-Nova/assets/nova-overview.png" />
-  <meta property="og:image:alt" content="Glass Nova desktop application showing the Overview workspace, sidebar navigation, luminous orb, microphone sensitivity HUD, and activity monitor." />
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://tejaswaroop30.github.io/Glass-Nova/">
+  <meta property="og:title" content="Glass Nova — Cinematic Windows AI Desktop Assistant">
+  <meta property="og:description" content="Online Gemini Live, Offline Ollama &amp; Vosk voice, fail-closed 9-category permissions, independent mic &amp; Text Mode lock, and 4 animated PySide6 companions.">
+  <meta property="og:image" content="https://tejaswaroop30.github.io/Glass-Nova/assets/nova-overview.png">
 
-  <!-- Twitter / Social Metadata -->
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Glass Nova — AI Desktop Assistant for Windows" />
-  <meta name="twitter:description" content="AI-powered Windows 10/11 desktop assistant with Gemini Live voice, Offline Local Mode, fail-closed permissions, verified UI automation, and animated companions." />
-  <meta name="twitter:url" content="https://tejaswaroop30.github.io/Glass-Nova/" />
-  <meta name="twitter:image" content="https://tejaswaroop30.github.io/Glass-Nova/assets/nova-overview.png" />
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:url" content="https://tejaswaroop30.github.io/Glass-Nova/">
+  <meta name="twitter:title" content="Glass Nova — Cinematic Windows AI Desktop Assistant">
+  <meta name="twitter:description" content="Open-source Windows 10/11 AI desktop assistant with Online, Offline &amp; Hybrid modes, fail-closed permissions, and 4 animated companions.">
+  <meta name="twitter:image" content="https://tejaswaroop30.github.io/Glass-Nova/assets/nova-overview.png">
 
-  <!-- Structured Data (JSON-LD) -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     "name": "Glass Nova",
-    "applicationCategory": "DesktopEnhancementApplication",
+    "applicationCategory": "UtilitiesApplication",
     "operatingSystem": "Windows 10, Windows 11",
-    "programmingLanguage": "Python",
-    "softwareRequirements": "Windows 10 or Windows 11, Python 3.11 or 3.12",
     "url": "https://tejaswaroop30.github.io/Glass-Nova/",
     "codeRepository": "https://github.com/tejaswaroop30/Glass-Nova",
-    "screenshot": "https://tejaswaroop30.github.io/Glass-Nova/assets/nova-overview.png",
-    "author": {
-      "@type": "Person",
-      "name": "Teja Swaroop",
-      "url": "https://github.com/tejaswaroop30"
-    },
-    "description": "Glass Nova is an AI-powered Windows desktop assistant featuring Gemini Live voice interaction, offline wake-word activation, verified desktop automation, screen and document understanding, hand-gesture mouse control, and animated companions.",
-    "offers": {
-      "@type": "Offer",
-      "price": "0",
-      "priceCurrency": "USD"
-    }
+    "description": "Open-source Python and PySide6 AI desktop assistant for Windows 10/11 supporting Online Gemini Live, Offline Ollama and Vosk voice, Hybrid mode, fail-closed permissions, and 4 animated desktop companions.",
+    "softwareRequirements": "Python 3.11-3.12 on Windows 10/11; optional GEMINI_API_KEY for online mode and optional Ollama for local AI models.",
+    "isAccessibleForFree": true
   }
   </script>
 
+  <!-- Critical Inline Accessibility, Mobile & Reduced-Motion Styles -->
   <style>
-    :root {
-      --bg-0: #02050e;
-      --bg-1: #050d1e;
-      --bg-2: #0a1932;
-      --surface: linear-gradient(150deg, rgba(14, 34, 66, 0.72), rgba(6, 15, 32, 0.88));
-      --surface-strong: linear-gradient(150deg, rgba(18, 44, 82, 0.84), rgba(6, 16, 36, 0.94));
-      --border: rgba(110, 214, 255, 0.2);
-      --border-hi: rgba(135, 232, 255, 0.5);
-      --text: #f1f9ff;
-      --muted: #aacbe0;
-      --dim: #7ea3be;
-      --cyan: #22d3ee;
-      --cyan-soft: #a5f3fc;
-      --blue: #3b82f6;
-      --violet: #8b5cf6;
-      --emerald: #34d399;
-      --amber: #fbbf24;
-      --shadow-xl: 0 32px 90px rgba(0, 0, 0, 0.62);
-      --shadow-md: 0 16px 40px rgba(0, 0, 0, 0.42);
-    }
-
     *, *::before, *::after { box-sizing: border-box; }
-
-    html {
-      scroll-behavior: smooth;
-      background: var(--bg-0);
-    }
-
+    html { scroll-behavior: smooth; color-scheme: dark; }
     body {
       margin: 0;
-      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-      color: var(--text);
-      background:
-        radial-gradient(ellipse 75% 42% at 50% -6%, rgba(34, 211, 238, 0.19), transparent 65%),
-        radial-gradient(ellipse 55% 40% at 12% 24%, rgba(139, 92, 246, 0.14), transparent 60%),
-        radial-gradient(ellipse 60% 45% at 88% 52%, rgba(37, 99, 235, 0.14), transparent 62%),
-        linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 48%, var(--bg-0) 100%);
-      line-height: 1.62;
-      min-height: 100vh;
-      overflow-x: hidden;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #040509;
+      color: #f4f7fd;
+      line-height: 1.6;
       -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
     }
+    img { max-width: 100%; height: auto; display: block; }
+    a { color: inherit; text-decoration: none; }
+    code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace; }
 
-    body::before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      z-index: -1;
-      pointer-events: none;
-      background-image:
-        linear-gradient(rgba(148, 216, 255, 0.032) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(148, 216, 255, 0.032) 1px, transparent 1px);
-      background-size: 64px 64px;
-      mask-image: radial-gradient(circle at 50% 18%, #000 32%, transparent 86%);
+    :focus-visible {
+      outline: 2px solid #38e8ff;
+      outline-offset: 3px;
+      border-radius: 8px;
     }
 
     .skip-link {
       position: absolute;
-      left: -9999px;
-      top: 12px;
+      left: 16px;
+      top: -64px;
       z-index: 200;
-      padding: 10px 18px;
-      border-radius: 10px;
-      background: #0e4a7d;
-      color: #ffffff;
-      border: 2px solid var(--cyan-soft);
+      padding: 10px 16px;
+      border-radius: 999px;
+      background: #38e8ff;
+      color: #040914;
       font-weight: 700;
-      text-decoration: none;
-    }
-    .skip-link:focus { left: 16px; }
-
-    a:focus-visible,
-    button:focus-visible,
-    summary:focus-visible {
-      outline: 2px solid var(--cyan-soft);
-      outline-offset: 3px;
-    }
-
-    img { max-width: 100%; height: auto; display: block; }
-
-    .container {
-      width: min(1180px, 100%);
-      margin: 0 auto;
-      padding: 0 24px;
-    }
-
-    /* ---- Sticky Navigation ---- */
-    .topbar {
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      background: rgba(3, 8, 20, 0.76);
-      border-bottom: 1px solid rgba(110, 214, 255, 0.14);
-    }
-
-    .topbar-inner {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      min-height: 70px;
-    }
-
-    .brand {
-      display: inline-flex;
-      align-items: center;
-      gap: 11px;
-      text-decoration: none;
-      color: #ffffff;
-      font-weight: 800;
-      font-size: 1.12rem;
-      letter-spacing: -0.015em;
-    }
-
-    .brand-orb {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      background: radial-gradient(circle at 35% 30%, #ecfeff 0%, #22d3ee 44%, #1d4ed8 100%);
-      box-shadow: 0 0 18px rgba(34, 211, 238, 0.65);
-      border: 1px solid rgba(165, 243, 252, 0.8);
-      flex-shrink: 0;
-    }
-
-    .nav-links {
-      display: flex;
-      align-items: center;
-      gap: 24px;
-    }
-
-    .nav-links a {
-      color: var(--muted);
-      text-decoration: none;
-      font-size: 0.93rem;
-      font-weight: 500;
-      transition: color 0.18s ease;
-    }
-    .nav-links a:hover,
-    .nav-links a:focus-visible { color: #ffffff; }
-
-    .nav-actions {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .menu-toggle {
-      display: none;
-      align-items: center;
-      justify-content: center;
-      width: 44px;
-      height: 44px;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: rgba(14, 38, 70, 0.65);
-      color: var(--text);
-      cursor: pointer;
-    }
-
-    /* ---- Buttons ---- */
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      min-height: 44px;
-      padding: 10px 22px;
-      border-radius: 12px;
-      font-size: 0.95rem;
-      font-weight: 700;
-      text-decoration: none;
-      color: #ffffff;
-      border: 1px solid var(--border);
-      background: rgba(14, 40, 74, 0.74);
-      cursor: pointer;
-      transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
-    }
-    .btn:hover,
-    .btn:focus-visible {
-      border-color: var(--border-hi);
-      background: rgba(20, 56, 102, 0.9);
-      transform: translateY(-1px);
-    }
-    .btn:active { transform: translateY(0); }
-
-    .btn.primary {
-      background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 55%, #4f46e5 100%);
-      border-color: rgba(165, 243, 252, 0.75);
-      box-shadow: 0 10px 30px rgba(14, 165, 233, 0.34);
-    }
-    .btn.primary:hover,
-    .btn.primary:focus-visible {
-      box-shadow: 0 14px 36px rgba(34, 211, 238, 0.46);
-      filter: brightness(1.08);
-    }
-
-    .btn.sm {
-      min-height: 38px;
-      padding: 7px 14px;
-      font-size: 0.87rem;
-      border-radius: 10px;
-    }
-
-    /* ---- Cinematic Hero ---- */
-    .hero {
-      padding: 68px 0 44px;
-      text-align: center;
-      position: relative;
-    }
-
-    .eyebrow {
-      display: inline-flex;
-      align-items: center;
-      gap: 9px;
-      padding: 6px 15px;
-      border-radius: 999px;
-      font-size: 0.84rem;
-      font-weight: 600;
-      color: var(--cyan-soft);
-      background: rgba(14, 48, 82, 0.62);
-      border: 1px solid rgba(56, 189, 248, 0.36);
-      margin-bottom: 20px;
-    }
-
-    .eyebrow-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--cyan);
-      box-shadow: 0 0 10px var(--cyan);
-      animation: pulseDot 2.4s ease-in-out infinite;
-    }
-
-    h1 {
-      margin: 0 auto 18px;
-      max-width: 860px;
-      font-size: clamp(2.45rem, 5.6vw, 4.2rem);
-      font-weight: 800;
-      line-height: 1.05;
-      letter-spacing: -0.032em;
-      color: #ffffff;
-    }
-
-    .gradient-text {
-      background: linear-gradient(110deg, #e0f2fe 0%, #38bdf8 46%, #a78bfa 100%);
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-    }
-
-    .hero-sub {
-      margin: 0 auto 28px;
-      max-width: 680px;
-      font-size: 1.14rem;
-      color: var(--muted);
-    }
-
-    .hero-cta {
-      display: flex;
-      justify-content: center;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-bottom: 44px;
-    }
-
-    /* ---- Framed Real Desktop Application Showcase ---- */
-    .app-showcase {
-      position: relative;
-      max-width: 1040px;
-      margin: 0 auto;
-    }
-
-    .app-ambient {
-      position: absolute;
-      inset: -32px 6% -24px;
-      background: radial-gradient(ellipse at 50% 42%, rgba(34, 211, 238, 0.26) 0%, rgba(59, 130, 246, 0.16) 44%, rgba(139, 92, 246, 0.1) 66%, transparent 78%);
-      filter: blur(28px);
-      z-index: 0;
-      pointer-events: none;
-      animation: breathe 6s ease-in-out infinite;
-    }
-
-    .app-frame {
-      position: relative;
-      z-index: 1;
-      padding: 12px;
-      border-radius: 28px;
-      background: linear-gradient(145deg, rgba(125, 232, 255, 0.24), rgba(16, 40, 76, 0.55) 40%, rgba(139, 92, 246, 0.22));
-      border: 1px solid rgba(145, 230, 255, 0.34);
-      box-shadow: var(--shadow-xl), inset 0 1px 0 rgba(255, 255, 255, 0.22);
-      transition: transform 0.35s ease, box-shadow 0.35s ease;
-    }
-
-    .app-frame:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 38px 100px rgba(0, 0, 0, 0.72), 0 0 42px rgba(34, 211, 238, 0.2);
-    }
-
-    .app-frame img {
-      width: 100%;
-      border-radius: 20px;
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-    }
-
-    .app-caption-bar {
-      margin-top: 16px;
-      display: flex;
-      justify-content: center;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-
-    .cap-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      padding: 6px 13px;
-      border-radius: 999px;
-      background: rgba(10, 26, 52, 0.78);
-      border: 1px solid var(--border);
-      color: var(--muted);
-      font-size: 0.84rem;
-      font-weight: 500;
-    }
-    .cap-pill strong { color: var(--cyan-soft); font-weight: 700; }
-
-    /* ---- Section Scaffolding ---- */
-    section { padding: 76px 0; }
-
-    .section-head {
-      max-width: 700px;
-      margin-bottom: 38px;
-    }
-
-    .kicker {
-      display: inline-block;
-      font-size: 0.8rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.13em;
-      color: var(--cyan);
-      margin-bottom: 8px;
-    }
-
-    h2 {
-      margin: 0 0 12px;
-      font-size: clamp(1.75rem, 3.3vw, 2.5rem);
-      font-weight: 800;
-      letter-spacing: -0.025em;
-      color: #ffffff;
-      line-height: 1.15;
-    }
-
-    .section-sub {
-      margin: 0;
-      color: var(--muted);
-      font-size: 1.04rem;
-    }
-
-    /* ---- Bento Features Grid (Asymmetric Modern Product Layout) ---- */
-    .bento-grid {
-      display: grid;
-      grid-template-columns: repeat(12, minmax(0, 1fr));
-      gap: 18px;
-    }
-
-    .bento-card {
-      grid-column: span 4;
-      position: relative;
-      overflow: hidden;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 22px;
-      padding: 26px 24px;
-      box-shadow: var(--shadow-md);
-      transition: transform 0.24s ease, border-color 0.24s ease, box-shadow 0.24s ease;
-    }
-
-    .bento-card.wide {
-      grid-column: span 6;
-      background:
-        radial-gradient(circle at 90% 10%, rgba(34, 211, 238, 0.15), transparent 55%),
-        var(--surface-strong);
-    }
-
-    .bento-card.wide.violet {
-      background:
-        radial-gradient(circle at 90% 10%, rgba(139, 92, 246, 0.17), transparent 55%),
-        var(--surface-strong);
-    }
-
-    .bento-card:hover {
-      transform: translateY(-4px);
-      border-color: var(--border-hi);
-      box-shadow: 0 22px 50px rgba(0, 0, 0, 0.55), 0 0 28px rgba(34, 211, 238, 0.12);
-    }
-
-    .icon-badge {
-      width: 46px;
-      height: 46px;
-      border-radius: 14px;
-      display: grid;
-      place-items: center;
-      margin-bottom: 16px;
-      background: linear-gradient(135deg, rgba(34, 211, 238, 0.22), rgba(139, 92, 246, 0.22));
-      border: 1px solid rgba(135, 232, 255, 0.35);
-      color: var(--cyan-soft);
-    }
-
-    .bento-card h3 {
-      margin: 0 0 8px;
-      font-size: 1.14rem;
-      color: #ffffff;
-    }
-
-    .bento-card p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 0.95rem;
-    }
-
-    .feature-tag {
-      display: inline-block;
-      margin-top: 14px;
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 0.77rem;
-      font-weight: 600;
-      color: var(--cyan-soft);
-      background: rgba(14, 46, 82, 0.65);
-      border: 1px solid rgba(103, 219, 255, 0.26);
-    }
-
-    /* ---- Dedicated Security & Permission Dialog Showcase ---- */
-    .security-showcase {
-      display: grid;
-      grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-      gap: 36px;
-      align-items: center;
-      padding: 36px;
-      border-radius: 28px;
-      background:
-        radial-gradient(circle at 20% 20%, rgba(16, 185, 129, 0.12), transparent 55%),
-        radial-gradient(circle at 85% 80%, rgba(34, 211, 238, 0.14), transparent 55%),
-        var(--surface-strong);
-      border: 1px solid rgba(110, 214, 255, 0.3);
-      box-shadow: var(--shadow-xl);
-    }
-
-    .perm-frame {
-      position: relative;
-      padding: 14px;
-      border-radius: 22px;
-      background: rgba(4, 12, 26, 0.75);
-      border: 1px solid rgba(125, 232, 255, 0.32);
-      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.58), 0 0 34px rgba(34, 211, 238, 0.14);
-    }
-
-    .perm-frame img {
-      width: 100%;
-      border-radius: 14px;
-    }
-
-    .perm-frame-caption {
-      margin: 10px 4px 0;
-      font-size: 0.82rem;
-      color: var(--dim);
-      text-align: center;
-    }
-
-    .action-choices {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
-      margin: 18px 0 20px;
-    }
-
-    .choice-box {
-      padding: 12px;
-      border-radius: 14px;
-      background: rgba(6, 18, 38, 0.75);
-      border: 1px solid var(--border);
-    }
-    .choice-box strong {
-      display: block;
-      font-size: 0.9rem;
-      color: #ffffff;
-      margin-bottom: 3px;
-    }
-    .choice-box span {
-      font-size: 0.81rem;
-      color: var(--muted);
-      line-height: 1.4;
-      display: block;
-    }
-    .choice-box.deny strong { color: #fca5a5; }
-    .choice-box.session strong { color: var(--cyan-soft); }
-
-    .perm-pills {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 7px;
-      margin: 14px 0 18px;
-    }
-
-    .perm-pill {
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 0.78rem;
-      font-weight: 600;
-      color: var(--cyan-soft);
-      background: rgba(15, 44, 78, 0.72);
-      border: 1px solid rgba(103, 219, 255, 0.28);
-    }
-    .perm-pill.strict {
-      color: #fde68a;
-      background: rgba(120, 53, 15, 0.35);
-      border-color: rgba(251, 191, 36, 0.45);
-    }
-
-    .clean-list {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-      display: grid;
-      gap: 10px;
-    }
-    .clean-list li {
-      position: relative;
-      padding-left: 20px;
-      color: var(--muted);
-      font-size: 0.94rem;
-    }
-    .clean-list li::before {
-      content: "";
-      position: absolute;
-      left: 0;
-      top: 9px;
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--cyan);
-      box-shadow: 0 0 8px rgba(34, 211, 238, 0.7);
-    }
-
-    /* ---- 4 Real Companions Showcase ---- */
-    .companion-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 18px;
-    }
-
-    .companion-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 22px;
-      padding: 26px 20px 22px;
-      text-align: center;
-      box-shadow: var(--shadow-md);
-      transition: transform 0.26s ease, border-color 0.26s ease, box-shadow 0.26s ease;
-    }
-
-    .companion-card:hover {
-      transform: translateY(-6px);
-      border-color: var(--comp-accent, var(--cyan-soft));
-      box-shadow: 0 24px 52px rgba(0, 0, 0, 0.56), 0 0 32px var(--comp-glow, rgba(34, 211, 238, 0.2));
-    }
-
-    .companion-stage {
-      width: 132px;
-      height: 132px;
-      margin: 0 auto 18px;
-      border-radius: 26px;
-      display: grid;
-      place-items: center;
-      padding: 12px;
-      background: radial-gradient(circle at 50% 42%, var(--comp-glow, rgba(34, 211, 238, 0.26)), rgba(4, 12, 26, 0.72) 74%);
-      border: 1px solid rgba(255, 255, 255, 0.12);
-    }
-
-    .companion-stage img {
-      max-width: 100%;
-      max-height: 108px;
-      object-fit: contain;
-      filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.45));
-      animation: floatY 5.2s ease-in-out infinite;
-    }
-    .companion-card:nth-child(2) .companion-stage img { animation-delay: 0.7s; }
-    .companion-card:nth-child(3) .companion-stage img { animation-delay: 1.4s; }
-    .companion-card:nth-child(4) .companion-stage img { animation-delay: 2.1s; }
-
-    .companion-card h3 {
-      margin: 0 0 6px;
-      font-size: 1.08rem;
-      color: #ffffff;
-    }
-
-    .companion-card p {
-      margin: 0;
-      font-size: 0.9rem;
-      color: var(--muted);
-    }
-
-    /* ---- How Nova Works Pipeline ---- */
-    .flow-grid {
-      display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 14px;
-    }
-
-    .flow-step {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 22px 18px;
-    }
-
-    .flow-step.gate {
-      border-color: rgba(52, 211, 153, 0.52);
-      background: linear-gradient(150deg, rgba(10, 50, 58, 0.74), rgba(6, 17, 34, 0.9));
-    }
-
-    .step-badge {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 30px;
-      height: 30px;
-      border-radius: 50%;
-      background: rgba(34, 211, 238, 0.18);
-      border: 1px solid rgba(125, 232, 255, 0.46);
-      color: var(--cyan-soft);
-      font-size: 0.84rem;
-      font-weight: 800;
-      margin-bottom: 12px;
-    }
-
-    .flow-step h3 {
-      margin: 0 0 6px;
-      font-size: 1rem;
-      color: #ffffff;
-    }
-
-    .flow-step p {
-      margin: 0;
       font-size: 0.88rem;
-      color: var(--muted);
+      transition: top 0.15s ease;
     }
-
-    /* ---- Installation & Requirements ---- */
-    .install-grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
-      gap: 22px;
-      align-items: stretch;
-    }
-
-    .glass-panel {
-      background: var(--surface-strong);
-      border: 1px solid var(--border);
-      border-radius: 24px;
-      padding: 28px;
-      box-shadow: var(--shadow-md);
-    }
-
-    .glass-panel h3 {
-      margin: 0 0 10px;
-      font-size: 1.2rem;
-      color: #ffffff;
-    }
-
-    .terminal-wrap {
-      border-radius: 16px;
-      overflow: hidden;
-      border: 1px solid rgba(110, 214, 255, 0.3);
-      background: rgba(2, 8, 18, 0.95);
-      margin: 18px 0;
-    }
-
-    .terminal-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      padding: 10px 14px;
-      background: rgba(12, 30, 56, 0.78);
-      border-bottom: 1px solid rgba(110, 214, 255, 0.16);
-      font-size: 0.82rem;
-      color: var(--muted);
-    }
-
-    pre {
-      margin: 0;
-      padding: 18px 20px;
-      max-width: 100%;
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      color: #dff6ff;
-      font-family: "Cascadia Code", Consolas, "Courier New", monospace;
-      font-size: 0.94rem;
-      line-height: 1.65;
-    }
-
-    .copy-status {
-      font-size: 0.84rem;
-      color: var(--emerald);
-      margin-left: 8px;
-      font-weight: 600;
-    }
-
-    p code, li code {
-      background: rgba(6, 20, 42, 0.85);
-      border: 1px solid rgba(110, 214, 255, 0.22);
-      padding: 2px 6px;
-      border-radius: 6px;
-      color: var(--cyan-soft);
-      font-size: 0.88em;
-      overflow-wrap: anywhere;
-    }
-
-    /* ---- FAQ Accordion ---- */
-    .faq-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px;
-    }
-
-    details {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 18px 20px;
-      transition: border-color 0.2s ease;
-    }
-
-    details[open] { border-color: var(--border-hi); }
-
-    summary {
-      cursor: pointer;
-      font-weight: 700;
-      color: #ffffff;
-      list-style: none;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-    }
-    summary::-webkit-details-marker { display: none; }
-    summary::after {
-      content: "+";
-      font-size: 1.25rem;
-      color: var(--cyan-soft);
-      line-height: 1;
-      flex-shrink: 0;
-    }
-    details[open] summary::after { content: "−"; }
-
-    details p {
-      margin: 12px 0 0;
-      color: var(--muted);
-      font-size: 0.94rem;
-    }
-
-    /* ---- Final CTA ---- */
-    .cta-banner {
-      text-align: center;
-      padding: 52px 28px;
-      border-radius: 28px;
-      background:
-        radial-gradient(circle at 50% 0%, rgba(34, 211, 238, 0.24), transparent 65%),
-        var(--surface-strong);
-      border: 1px solid var(--border-hi);
-      box-shadow: var(--shadow-xl);
-    }
-    .cta-banner p {
-      margin: 0 auto 24px;
-      max-width: 580px;
-      color: var(--muted);
-    }
-    .cta-actions {
-      display: flex;
-      justify-content: center;
-      flex-wrap: wrap;
-      gap: 12px;
-    }
-
-    /* ---- Footer ---- */
-    footer {
-      margin-top: 24px;
-      padding: 28px 0 44px;
-      border-top: 1px solid rgba(110, 214, 255, 0.16);
-      color: var(--dim);
-      font-size: 0.9rem;
-    }
-
-    .footer-inner {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-    }
-
-    .footer-links {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 18px;
-    }
-
-    footer a {
-      color: var(--cyan-soft);
-      text-decoration: none;
-    }
-    footer a:hover,
-    footer a:focus-visible {
-      text-decoration: underline;
-      text-underline-offset: 3px;
-    }
-
-    /* ---- Scroll Reveal ---- */
-    .reveal {
-      opacity: 1;
-      transform: none;
-      transition: opacity 0.55s ease, transform 0.55s ease;
-    }
-    .js .reveal { opacity: 0; transform: translateY(18px); }
-    .js .reveal.visible { opacity: 1; transform: translateY(0); }
-
-    /* ---- Keyframes ---- */
-    @keyframes floatY {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-7px); }
-    }
-    @keyframes breathe {
-      0%, 100% { opacity: 0.85; transform: scale(1); }
-      50% { opacity: 1; transform: scale(1.03); }
-    }
-    @keyframes pulseDot {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.45; transform: scale(0.82); }
-    }
-
-    /* ---- Responsive Layouts ---- */
-    @media (max-width: 1020px) {
-      .bento-card { grid-column: span 6; }
-      .bento-card.wide { grid-column: span 12; }
-      .security-showcase { grid-template-columns: 1fr; padding: 26px; }
-      .companion-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .flow-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .install-grid { grid-template-columns: 1fr; }
-      .faq-grid { grid-template-columns: 1fr; }
-    }
-
-    @media (max-width: 780px) {
-      .nav-links {
-        display: none;
-        position: absolute;
-        top: 70px;
-        left: 0;
-        right: 0;
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 14px;
-        padding: 18px 24px 22px;
-        background: rgba(3, 9, 22, 0.97);
-        border-bottom: 1px solid var(--border);
-      }
-      .nav-links.open { display: flex; }
-      .menu-toggle { display: inline-flex; }
-    }
+    .skip-link:focus { top: 16px; }
 
     @media (max-width: 640px) {
-      .container { padding: 0 16px; }
-      .hero { padding: 42px 0 30px; }
-      section { padding: 48px 0; }
-      .bento-card { grid-column: span 12; padding: 22px 18px; }
-      .companion-grid,
-      .flow-grid,
-      .action-choices { grid-template-columns: 1fr; }
-      .hero-cta,
-      .cta-actions { flex-direction: column; }
-      .hero-cta .btn,
-      .cta-actions .btn { width: 100%; }
-      .app-frame { padding: 7px; border-radius: 18px; }
-      .app-frame img { border-radius: 12px; }
-      .security-showcase,
-      .glass-panel { padding: 20px 16px; }
-      .footer-inner { flex-direction: column; align-items: flex-start; }
+      .scene { padding: 68px 0; }
+      .hero-scene { padding: 100px 0 54px; min-height: auto; }
+      .container { width: min(1180px, calc(100% - 28px)); }
+      .nav-shell { width: calc(100% - 20px); padding: 8px 12px 8px 14px; }
+      .nav-actions .btn-glass { display: none; }
+      .hero-metrics { grid-template-columns: 1fr; }
+      .hero-companion-float { position: static; width: auto; flex-direction: row; margin-top: 12px; animation: none; transform: none; }
+      .hero-companion-float img { width: 48px; height: 48px; }
+      .hero-telemetry-float { display: none; }
+      .status-grid, .companion-roster { grid-template-columns: 1fr; }
+      .perm-matrix { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .mode-console, .audio-sim-dock, .theater-stage { padding: 20px; }
+      .pedestal-stage { min-height: 300px; padding: 28px 18px 24px; }
+      .pedestal-sprite { width: 164px; height: 164px; }
+      .pedestal-ring { width: 196px; height: 196px; }
     }
 
     @media (prefers-reduced-motion: reduce) {
       html { scroll-behavior: auto; }
       *, *::before, *::after {
-        animation: none !important;
-        transition: none !important;
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
       }
-      .js .reveal { opacity: 1; transform: none; }
+      .js .reveal:not(.is-visible) { opacity: 1; transform: none; }
     }
   </style>
+  <link rel="stylesheet" href="styles.css?v=3">
   <script>document.documentElement.classList.add('js');</script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to main content</a>
 
-  <header class="topbar">
-    <div class="container topbar-inner">
-      <a class="brand" href="#top" aria-label="Glass Nova home">
-        <span class="brand-orb" aria-hidden="true"></span>
+  <!-- Optical Liquid Glass SVG Displacement Filter -->
+  <svg width="0" height="0" style="position:absolute; pointer-events:none;" aria-hidden="true">
+    <defs>
+      <filter id="liquid-glass-refract" x="-10%" y="-10%" width="120%" height="120%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.012 0.018" numOctaves="2" seed="7" result="noise"/>
+        <feGaussianBlur in="noise" stdDeviation="1.4" result="smoothNoise"/>
+        <feDisplacementMap in="SourceGraphic" in2="smoothNoise" scale="8" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+    </defs>
+  </svg>
+
+  <!-- Clean Interactive 3D Geometric Canvas -->
+  <canvas id="nova-webgl" aria-hidden="true"></canvas>
+  <div class="ambient-vignette" aria-hidden="true"></div>
+  <div class="scroll-rail" aria-hidden="true"><div class="scroll-rail-fill" id="scroll-rail-fill"></div></div>
+
+  <!-- Floating Liquid Glass Navigation -->
+  <header class="site-header">
+    <div class="nav-shell liquid-glass">
+      <a class="brand" href="#reveal" aria-label="Glass Nova Home">
+        <span class="brand-mark">
+          <img src="assets/companion-robot.png" alt="Glass Nova robot emblem" width="22" height="22">
+        </span>
         <span>Glass Nova</span>
       </a>
 
-      <nav class="nav-links" id="site-nav" aria-label="Primary navigation">
-        <a href="#features">Features</a>
-        <a href="#privacy">Privacy</a>
-        <a href="#companions">Companions</a>
-        <a href="#how-it-works">How It Works</a>
-        <a href="#install">Install</a>
-        <a href="#faq">FAQ</a>
+      <nav aria-label="Primary navigation">
+        <ul class="nav-links" id="primary-nav">
+          <li><a href="#modes">Modes</a></li>
+          <li><a href="#capabilities">Capabilities</a></li>
+          <li><a href="#roadmap">Roadmap</a></li>
+          <li><a href="#companions">Companions</a></li>
+          <li><a href="#security">Security</a></li>
+          <li><a href="#setup">Setup</a></li>
+        </ul>
       </nav>
 
       <div class="nav-actions">
-        <a class="btn sm primary" href="https://github.com/tejaswaroop30/Glass-Nova">GitHub</a>
-        <button class="menu-toggle" type="button" id="menu-btn" aria-expanded="false" aria-controls="site-nav" aria-label="Toggle navigation menu">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-        </button>
+        <a class="btn btn-glass btn-sm" href="#setup">Run Local</a>
+        <a class="btn btn-primary btn-sm" href="https://github.com/tejaswaroop30/Glass-Nova" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <button class="mobile-menu-btn" type="button" id="menu-toggle" aria-expanded="false" aria-controls="primary-nav">Menu</button>
       </div>
     </div>
   </header>
 
   <main id="main-content">
-    <!-- Hero + Real Desktop Application Centerpiece -->
-    <section class="hero" id="top">
+    <!-- =======================================================
+         01 — CINEMATIC 3D HERO
+         ======================================================= -->
+    <section class="hero-scene" id="reveal">
       <div class="container">
-        <div class="eyebrow">
-          <span class="eyebrow-dot" aria-hidden="true"></span>
-          <span>Windows 10 / 11 • Python 3.11–3.12 • Gemini Live + Offline Mode</span>
-        </div>
-
-        <h1>Meet <span class="gradient-text">Glass Nova</span>.<br />Your AI Desktop Assistant for Windows.</h1>
-
-        <p class="hero-sub">
-          A frameless PySide6 glass workspace featuring real-time Gemini Live voice conversations,
-          offline <strong>"Hey Nova"</strong> wake-word activation, verified desktop automation,
-          screen understanding, webcam hand-gesture mouse control, and animated desktop companions.
-        </p>
-
-        <div class="hero-cta">
-          <a class="btn primary" href="https://github.com/tejaswaroop30/Glass-Nova">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.33-1.76-1.33-1.76-1.09-.74.08-.73.08-.73 1.2.09 1.84 1.24 1.84 1.24 1.07 1.83 2.81 1.3 3.5.99.11-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.12-.3-.54-1.52.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.66.24 2.88.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.63-5.49 5.92.43.37.82 1.1.82 2.22v3.29c0 .32.22.7.83.58A12 12 0 0 0 12 .5Z"/></svg>
-            Explore GitHub
-          </a>
-          <a class="btn" href="#features">Explore Features</a>
-        </div>
-
-        <!-- Actual Glass Nova Desktop Application Screenshot -->
-        <div class="app-showcase">
-          <div class="app-ambient" aria-hidden="true"></div>
-          <div class="app-frame">
-            <img
-              src="assets/nova-overview.png"
-              width="1550"
-              height="1000"
-              alt="Actual Glass Nova Windows desktop application showing sidebar navigation (Overview, Chat & Voice, Tasks & Memory, Computer Tools, Settings), voice assistant controls, animated orb, live microphone sensitivity waveform with AUTO NEAREST, activity monitor, hand gesture toggle, and floating companion button."
-            />
-          </div>
-          <div class="app-caption-bar" aria-label="Highlights visible in the desktop application">
-            <span class="cap-pill"><strong>Sidebar</strong> Overview • Chat &amp; Voice • Tasks &amp; Memory • Computer Tools • Settings</span>
-            <span class="cap-pill"><strong>Mic HUD</strong> Live Waveform &amp; AUTO NEAREST</span>
-            <span class="cap-pill"><strong>Controls</strong> Hand Gesture &amp; Floating Companion</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Features Bento Showcase -->
-    <section id="features" aria-labelledby="features-heading">
-      <div class="container">
-        <div class="section-head reveal">
-          <span class="kicker">Capabilities</span>
-          <h2 id="features-heading">Designed for Real Windows Productivity</h2>
-          <p class="section-sub">
-            Voice interaction, local offline commands, DPI-aware UIAutomation, and fail-closed safety working together in one lightweight desktop assistant.
-          </p>
-        </div>
-
-        <div class="bento-grid">
-          <article class="bento-card wide reveal">
-            <div class="icon-badge" aria-hidden="true">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
-            </div>
-            <h3>AI Voice — Gemini Live Conversations</h3>
-            <p>One persistent bidirectional Gemini Live session shared across voice and typed chat. Includes adaptive near-field barge-in, self-echo suppression, PyCAW background media ducking, and a live microphone sensitivity oscilloscope HUD.</p>
-            <span class="feature-tag">Gemini Live • PyCAW Ducking • Barge-In</span>
-          </article>
-
-          <article class="bento-card wide violet reveal">
-            <div class="icon-badge" aria-hidden="true">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-            </div>
-            <h3>Visual Desktop Agent</h3>
-            <p>Permission-based desktop interaction combining Windows UIAutomation and Gemini Vision fallback. Every tool follows a strict verification contract — reporting confirmed, unverified, or failed outcomes for clicks, Notepad writing, browser tabs, and YouTube playback.</p>
-            <span class="feature-tag">UIAutomation • Verified Actions</span>
-          </article>
-
-          <article class="bento-card reveal">
-            <div class="icon-badge" aria-hidden="true">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h2"/><path d="M6 8v8"/><path d="M10 4v16"/><path d="M14 7v10"/><path d="M18 10v4"/><path d="M22 12h-2"/></svg>
-            </div>
-            <h3>Hey Nova</h3>
-            <p>Offline local Vosk wake-word detection with single-breath command capture, clean microphone handover, and automatic error recovery.</p>
-          </article>
-
-          <article class="bento-card reveal">
-            <div class="icon-badge" aria-hidden="true">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            </div>
-            <h3>Local Mode</h3>
-            <p>0ms offline assistance for supported Windows tasks: apps, folders, volume, brightness, tabs, clipboard, screenshots, tasks, memories, permissions, and companion controls.</p>
-          </article>
-
-          <article class="bento-card reveal">
-            <div class="icon-badge" aria-hidden="true">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-            </div>
-            <h3>Screen Understanding</h3>
-            <p>Permission-gated screen inspection, Point at Screen region selection (Ctrl+Shift+P), multi-page PDF/document analysis, and lecture/video frame explanations.</p>
-          </article>
-
-          <article class="bento-card reveal">
-            <div class="icon-badge" aria-hidden="true">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a2 2 0 0 0-4 0v4"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
-            </div>
-            <h3>Gesture Control</h3>
-            <p>Optional webcam hand-gesture mouse controller to move the cursor, click, drag, and scroll hands-free using local hand landmark tracking.</p>
-          </article>
-
-          <article class="bento-card reveal">
-            <div class="icon-badge" aria-hidden="true">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 1 7 7v4a7 7 0 0 1-14 0V9a7 7 0 0 1 7-7z"/><circle cx="9" cy="10" r="1"/><circle cx="15" cy="10" r="1"/><path d="M9 15c1.5 1 4.5 1 6 0"/></svg>
-            </div>
-            <h3>Desktop Companions</h3>
-            <p>Four selectable always-on-top animated companions bridged to Nova's live listening, thinking, and speaking states (toggle with Ctrl+Shift+N).</p>
-          </article>
-
-          <article class="bento-card reveal">
-            <div class="icon-badge" aria-hidden="true">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
-            </div>
-            <h3>Privacy &amp; Permissions</h3>
-            <p>Fail-closed permission enforcement across 9 categories, allow-listed action validation, guided walkthroughs, and secret-free semantic workflow replay.</p>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <!-- Dedicated Security & Permission Request Showcase -->
-    <section id="privacy" aria-labelledby="privacy-heading">
-      <div class="container">
-        <div class="section-head reveal">
-          <span class="kicker">Security &amp; User Control</span>
-          <h2 id="privacy-heading">Explicit Permission Before Sensitive Actions</h2>
-          <p class="section-sub">
-            Glass Nova never silently controls your mouse, modifies files, or monitors your screen. Every sensitive request shows the exact category and action first.
-          </p>
-        </div>
-
-        <div class="security-showcase reveal">
+        <div class="hero-layout">
           <div>
-            <div class="perm-frame">
-              <img
-                src="assets/nova-permission.png"
-                width="700"
-                height="444"
-                loading="lazy"
-                alt="Actual Glass Nova Security and Permission Request window asking for Mouse and Keyboard Control to Start Hand Gesture Mouse Control, with voice approval instructions and Allow for Session, Allow Once, and Deny buttons."
-              />
-              <p class="perm-frame-caption">Actual Glass Nova Permission Dialog — Mouse &amp; Keyboard Control request</p>
+            <div class="status-pill liquid-glass">
+              <span class="status-dot" aria-hidden="true"></span>
+              <span>Open-Source &bull; Windows 10/11 &bull; Active Development</span>
             </div>
-          </div>
 
-          <div>
-            <h3 style="margin: 0 0 10px; font-size: 1.3rem; color: #ffffff;">Action-Specific, Fail-Closed Approvals</h3>
-            <p style="margin: 0; color: var(--muted); font-size: 0.96rem;">
-              When an action requires elevated access, Nova displays the exact category and target action — and lets you respond by click or hands-free voice (<em>"Allow"</em>, <em>"Allow Once"</em>, or <em>"Deny"</em>).
+            <h1>
+              Desktop intelligence,
+              <span class="title-accent">reimagined in glass and local control.</span>
+            </h1>
+
+            <p class="lead">
+              Glass Nova is an open-source Python &amp; PySide6 AI desktop assistant for Windows 10 and 11. Run live voice with Gemini online, or switch to 100% offline 0 ms commands, Vosk voice, Windows SAPI TTS, and local Ollama AI — guarded by fail-closed permissions.
             </p>
 
-            <div class="action-choices">
-              <div class="choice-box session">
-                <strong>Allow for Session</strong>
-                <span>Grants the category until you revoke or exit.</span>
+            <div class="hero-cta">
+              <a class="btn btn-primary" href="https://github.com/tejaswaroop30/Glass-Nova" target="_blank" rel="noopener noreferrer">View on GitHub</a>
+              <a class="btn btn-glass" href="#setup">Install Guide</a>
+            </div>
+
+            <div class="hero-metrics">
+              <div class="hero-metric">
+                <strong>Online · Offline · Hybrid</strong>
+                <span>Gemini Live + Ollama + 0 ms local</span>
               </div>
-              <div class="choice-box">
-                <strong>Allow Once</strong>
-                <span>Approves only this single requested action.</span>
+              <div class="hero-metric">
+                <strong>9 Permission Gates</strong>
+                <span>Fail-closed; no AI self-grants</span>
               </div>
-              <div class="choice-box deny">
-                <strong>Deny</strong>
-                <span>Immediately stops the action without executing.</span>
+              <div class="hero-metric">
+                <strong>4 Desktop Companions</strong>
+                <span>Animated PySide6 overlays</span>
               </div>
             </div>
-
-            <div class="perm-pills" aria-label="9 permission categories">
-              <span class="perm-pill">screen_view</span>
-              <span class="perm-pill strict">continuous_screen • always prompt</span>
-              <span class="perm-pill">document_access</span>
-              <span class="perm-pill">media_access</span>
-              <span class="perm-pill">mouse_keyboard</span>
-              <span class="perm-pill">file_modify</span>
-              <span class="perm-pill strict">file_delete • always prompt</span>
-              <span class="perm-pill">app_install</span>
-              <span class="perm-pill strict">form_purchase • always prompt</span>
-            </div>
-
-            <ul class="clean-list">
-              <li><strong>Fail-closed by default:</strong> if permission cannot be verified, protected tools deny automatically.</li>
-              <li><strong>Strict action allow-list:</strong> <code>ApprovedActionBroker</code> validates schemas and blocks shell injection or unsafe URL schemes.</li>
-              <li><strong>Local storage only:</strong> tasks, memories, and audit logs remain in <code>%APPDATA%\PC_Complete_Assistant\</code>.</li>
-            </ul>
           </div>
-        </div>
-      </div>
-    </section>
 
-    <!-- Companion Showcase (4 Real Companions Only) -->
-    <section id="companions" aria-labelledby="companions-heading">
-      <div class="container">
-        <div class="section-head reveal">
-          <span class="kicker">Desktop Companions</span>
-          <h2 id="companions-heading">Four Built-In Animated Companions</h2>
-          <p class="section-sub">
-            Choose from four always-on-top companions rendered directly by Glass Nova. Switch anytime in Settings or toggle visibility with <code>Ctrl+Shift+N</code>.
-          </p>
-        </div>
+          <!-- 3D Interactive Real App Stage -->
+          <div class="hero-stage-wrap">
+            <div class="hero-stage" data-tilt-stage data-tilt-max="6">
+              <div class="hero-halo" aria-hidden="true"></div>
 
-        <div class="companion-grid">
-          <article class="companion-card reveal" style="--comp-accent: #38bdf8; --comp-glow: rgba(56, 189, 248, 0.28);">
-            <div class="companion-stage">
-              <img src="assets/companion-robot.png" width="263" height="313" loading="lazy" alt="Original NOVA Robot desktop companion rendered by Glass Nova" />
-            </div>
-            <h3>Original NOVA Robot</h3>
-            <p>Pearl-and-gold holographic robot companion with glowing cyan visor eyes and live state reactions.</p>
-          </article>
+              <div class="hero-telemetry-float liquid-glass liquid-glass-refract">
+                <span class="status-dot" aria-hidden="true"></span>
+                <span>Fail-Closed Permissions Active</span>
+              </div>
 
-          <article class="companion-card reveal" style="--comp-accent: #a5f3fc; --comp-glow: rgba(165, 243, 252, 0.24);">
-            <div class="companion-stage">
-              <img src="assets/companion-ghost.png" width="375" height="375" loading="lazy" alt="Ghost desktop companion rendered by Glass Nova" />
-            </div>
-            <h3>Ghost</h3>
-            <p>Floating translucent phantom companion with luminous violet-white eyes and smooth drift.</p>
-          </article>
-
-          <article class="companion-card reveal" style="--comp-accent: #c084fc; --comp-glow: rgba(192, 132, 252, 0.28);">
-            <div class="companion-stage">
-              <img src="assets/companion-pet.png" width="280" height="280" loading="lazy" alt="NOVA Painter Pet sprite companion from Glass Nova" />
-            </div>
-            <h3>NOVA Painter Pet</h3>
-            <p>Expressive sprite companion with animated moods for idle, talking, thinking, happy, and sleep.</p>
-          </article>
-
-          <article class="companion-card reveal" style="--comp-accent: #60a5fa; --comp-glow: rgba(96, 165, 250, 0.28);">
-            <div class="companion-stage">
-              <img src="assets/companion-cloudy.png" width="280" height="275" loading="lazy" alt="Cloudy animated cloud companion from Glass Nova" />
-            </div>
-            <h3>Cloudy</h3>
-            <p>Calm sky-blue animated cloud companion with gentle floating frames synced to Nova's state.</p>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <!-- How Nova Works -->
-    <section id="how-it-works" aria-labelledby="how-heading">
-      <div class="container">
-        <div class="section-head reveal">
-          <span class="kicker">How Nova Works</span>
-          <h2 id="how-heading">Transparent Execution From Request to Verified Result</h2>
-          <p class="section-sub">
-            Whether you speak online with Gemini Live or run a local offline command, Glass Nova validates and verifies every step.
-          </p>
-        </div>
-
-        <div class="flow-grid">
-          <div class="flow-step reveal">
-            <span class="step-badge">1</span>
-            <h3>User Request</h3>
-            <p>Say "Hey Nova", talk in voice chat, type a message, or use a shortcut.</p>
-          </div>
-          <div class="flow-step reveal">
-            <span class="step-badge">2</span>
-            <h3>AI Processing</h3>
-            <p>Gemini Live or the 0ms offline matcher maps the request to an allow-listed schema.</p>
-          </div>
-          <div class="flow-step gate reveal">
-            <span class="step-badge">3</span>
-            <h3>Permission Check</h3>
-            <p>When required, Nova checks session grants or asks Allow Once / Session / Deny.</p>
-          </div>
-          <div class="flow-step reveal">
-            <span class="step-badge">4</span>
-            <h3>Action</h3>
-            <p>ApprovedActionBroker runs the validated tool via UIAutomation or Windows APIs.</p>
-          </div>
-          <div class="flow-step reveal">
-            <span class="step-badge">5</span>
-            <h3>Verified Feedback</h3>
-            <p>Nova checks the actual outcome and replies honestly with confirmed or failed status.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Installation & Requirements -->
-    <section id="install" aria-labelledby="install-heading">
-      <div class="container">
-        <div class="section-head reveal">
-          <span class="kicker">Get Started</span>
-          <h2 id="install-heading">Install &amp; Launch on Windows</h2>
-          <p class="section-sub">
-            Clone the repository and run the included Windows launcher script to create your environment and start Glass Nova.
-          </p>
-        </div>
-
-        <div class="install-grid">
-          <div class="glass-panel reveal">
-            <h3>Quick Setup Commands</h3>
-            <p style="margin: 0; color: var(--muted); font-size: 0.94rem;">
-              <code>Start_Glass_Nova.bat</code> creates <code>.venv</code>, installs <code>requirements.txt</code>, copies <code>.env.example</code> to <code>.env</code>, and launches <code>ui.py</code>.
-            </p>
-
-            <div class="terminal-wrap">
-              <div class="terminal-bar">
-                <span>PowerShell / Command Prompt</span>
-                <div>
-                  <button type="button" class="btn sm" id="copy-btn">Copy commands</button>
-                  <span class="copy-status" id="copy-status" aria-live="polite"></span>
+              <div class="hero-screen-frame liquid-glass">
+                <div class="frame-chrome">
+                  <span class="frame-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+                  <span>Real Glass Nova PySide6 UI &mdash; Overview</span>
                 </div>
+                <img
+                  src="assets/nova-overview.png"
+                  alt="Real Glass Nova Windows desktop application Overview window showing live voice status, modes, and workspace controls"
+                  width="1280"
+                  height="800"
+                >
               </div>
-              <pre><code id="install-code">git clone https://github.com/tejaswaroop30/Glass-Nova.git
-cd Glass-Nova
-Start_Glass_Nova.bat</code></pre>
+
+              <div class="hero-companion-float liquid-glass liquid-glass-refract">
+                <img
+                  src="assets/companion-robot.png"
+                  alt="Floating NOVA Robot PySide6 desktop companion overlay"
+                  width="86"
+                  height="86"
+                >
+                <span>NOVA Overlay</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================
+         02 — OPERATING MODES & INDEPENDENT VOICE CONTROLS
+         ======================================================= -->
+    <section class="scene scene-divider" id="modes">
+      <div class="container">
+        <div class="scene-intro reveal">
+          <div class="scene-kicker"><span class="idx">02</span> Modes &amp; Voice</div>
+          <h2>Cloud speed when connected. Local autonomy when offline.</h2>
+          <p>Switch cleanly between Online, Offline, and Hybrid modes. Every requirement and limitation below matches the actual repository implementation.</p>
+        </div>
+
+        <div class="mode-console liquid-glass reveal">
+          <div class="mode-dock liquid-glass" role="tablist" aria-label="Glass Nova Operating Modes">
+            <button class="mode-tab" type="button" role="tab" data-mode-tab id="tab-online" aria-selected="true" aria-controls="panel-online">Online Mode</button>
+            <button class="mode-tab" type="button" role="tab" data-mode-tab id="tab-offline" aria-selected="false" aria-controls="panel-offline">Offline Mode</button>
+            <button class="mode-tab" type="button" role="tab" data-mode-tab id="tab-hybrid" aria-selected="false" aria-controls="panel-hybrid">Hybrid Mode</button>
+          </div>
+
+          <div id="panel-online" role="tabpanel" aria-labelledby="tab-online">
+            <div class="signal-flow">
+              <span>Voice / Chat</span><span class="signal-arrow">&rarr;</span>
+              <span>Gemini Live (Ordered Model Fallback)</span><span class="signal-arrow">&rarr;</span>
+              <span>Permission Gate</span><span class="signal-arrow">&rarr;</span>
+              <span>Windows &amp; Browser Tools</span>
+            </div>
+            <div class="mode-body">
+              <div>
+                <h3>Gemini Live Native Audio &amp; Full Tool Access</h3>
+                <ul class="check-list">
+                  <li><strong>Ordered Model Fallback:</strong> Connects to <code>gemini-2.5-flash-native-audio-preview</code> with configured fallbacks and reports connection status instead of switching silently.</li>
+                  <li><strong>Multimodal Intelligence:</strong> Live web search, screen inspection, Point at Screen, document/PDF Q&amp;A, and video keyframe analysis.</li>
+                  <li><strong>Verified Automation:</strong> Windows UIAutomation actions, Playwright browser tasks, guided walkthroughs, and reusable semantic workflows.</li>
+                </ul>
+              </div>
+              <div class="req-slab">
+                <h3>What Online Mode Requires</h3>
+                <ul class="check-list">
+                  <li><strong>Internet + API Key:</strong> Requires internet and your own <code>GEMINI_API_KEY</code> in local <code>.env</code>.</li>
+                  <li><strong>Cloud Processing:</strong> Prompts, audio, and triggered screen frames are sent to the Google Gemini API.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div id="panel-offline" role="tabpanel" aria-labelledby="tab-offline" hidden>
+            <div class="signal-flow">
+              <span>Vosk Offline Voice / Chat</span><span class="signal-arrow">&rarr;</span>
+              <span>0 ms Local Commands OR Local Ollama</span><span class="signal-arrow">&rarr;</span>
+              <span>Windows SAPI Offline TTS</span>
+            </div>
+            <div class="mode-body">
+              <div>
+                <h3>Zero-Internet Commands, Local Voice &amp; Optional Ollama AI</h3>
+                <ul class="check-list">
+                  <li><strong>0 ms Deterministic Commands:</strong> Launch apps, control volume/brightness/media, manage windows, timers, reminders, notes, clipboard, calculator, and local file search.</li>
+                  <li><strong>Offline Voice &amp; Speech:</strong> Unconstrained Vosk offline speech recognition paired with live-verified Windows SAPI TTS (<code>comtypes</code>/<code>win32com</code>).</li>
+                  <li><strong>Optional Local Ollama AI:</strong> Adds local chat, bounded 5-step <code>OfflineAgent</code> (<code>qwen2.5:3b</code>), local screen/video vision (<code>moondream</code>), and offline guided walkthroughs.</li>
+                </ul>
+              </div>
+              <div class="req-slab">
+                <h3>What Offline Mode Requires</h3>
+                <ul class="check-list">
+                  <li><strong>Zero Internet Needed:</strong> Deterministic commands, Vosk voice, SAPI TTS, Safe Python, and TF-IDF Local Knowledge work completely offline.</li>
+                  <li><strong>Optional Ollama Models:</strong> Pull <code>qwen2.5:3b</code> and <code>moondream</code> for local AI reasoning and vision.</li>
+                  <li><strong>Unavailable Offline:</strong> Live web search and Gemini Live cloud audio require internet.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div id="panel-hybrid" role="tabpanel" aria-labelledby="tab-hybrid" hidden>
+            <div class="signal-flow">
+              <span>Local 0 ms Reflexes</span><span class="signal-arrow">+</span>
+              <span>Cloud Gemini Live (Online)</span><span class="signal-arrow">&harr;</span>
+              <span>Local Ollama &amp; SAPI Continuity (Offline)</span>
+            </div>
+            <div class="mode-body">
+              <div>
+                <h3>Local-First Speed with Cloud Intelligence on Demand</h3>
+                <ul class="check-list">
+                  <li><strong>Fast Local Reflexes:</strong> Everyday Windows actions run locally while complex queries use Gemini Live when online.</li>
+                  <li><strong>Consistent Audio State:</strong> Mic Listening, Spoken Replies, and Text Mode Lock stay synchronized across all mode switches.</li>
+                  <li><strong>Graceful Continuity:</strong> If internet drops, local commands, offline SAPI speech, and Ollama remain ready.</li>
+                </ul>
+              </div>
+              <div class="req-slab">
+                <h3>Recommended Hybrid Setup</h3>
+                <ul class="check-list">
+                  <li><strong>Optional Dual Stack:</strong> Add <code>GEMINI_API_KEY</code> for cloud features and Ollama for full offline AI continuity.</li>
+                  <li><strong>Manual Control:</strong> Switch modes explicitly anytime without losing your voice or text lock preferences.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Interactive 4-State Audio & Text Mode Lock Preview -->
+        <div class="audio-sim-dock liquid-glass reveal">
+          <div class="sim-header">
+            <div>
+              <h3>Independent Microphone, Spoken Replies &amp; Text Mode Lock</h3>
+              <p style="margin:4px 0 0; color:var(--text-muted); font-size:0.9rem;">Toggle each control to see how Glass Nova separates listening from speaking and keeps Text Mode locked until you manually switch back.</p>
+            </div>
+            <span class="sim-tag">Interactive Web Preview</span>
+          </div>
+
+          <div class="toggle-bar">
+            <button class="toggle-pill" type="button" id="btn-mic" data-control="mic" aria-pressed="true">Mic Listening: ON</button>
+            <button class="toggle-pill" type="button" id="btn-tts" data-control="tts" aria-pressed="true">Spoken Replies: ON</button>
+            <button class="toggle-pill" type="button" id="btn-textmode" data-control="textmode" aria-pressed="false">Text Mode Lock: OFF</button>
+          </div>
+
+          <div class="sim-readout" id="control-readout" aria-live="polite">
+            <strong>Full Voice Mode:</strong> Microphone listening and spoken replies are both active across Online (Gemini Live), Offline (Vosk + Windows SAPI), and Hybrid modes.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================
+         03 — CODE-VERIFIED CAPABILITIES
+         ======================================================= -->
+    <section class="scene scene-divider" id="capabilities">
+      <div class="container">
+        <div class="scene-intro reveal">
+          <div class="scene-kicker"><span class="idx">03</span> Capabilities</div>
+          <h2>Six verified desktop disciplines, backed by real code.</h2>
+          <p>Select any capability to view its online/offline path, required permission gates, and actual Python modules.</p>
+        </div>
+
+        <div class="theater-grid">
+          <div class="chapter-rail reveal" role="tablist" aria-label="Verified Glass Nova Capabilities">
+            <button class="chapter-btn" type="button" role="tab" data-cap="screen" aria-selected="true">
+              <span class="num">01</span>
+              <span><strong>Screen Inspection &amp; Point at Screen</strong></span>
+            </button>
+            <button class="chapter-btn" type="button" role="tab" data-cap="automation" aria-selected="false">
+              <span class="num">02</span>
+              <span><strong>Verified Desktop &amp; Browser Automation</strong></span>
+            </button>
+            <button class="chapter-btn" type="button" role="tab" data-cap="media" aria-selected="false">
+              <span class="num">03</span>
+              <span><strong>Document, PDF &amp; Video Analysis</strong></span>
+            </button>
+            <button class="chapter-btn" type="button" role="tab" data-cap="knowledge" aria-selected="false">
+              <span class="num">04</span>
+              <span><strong>Opt-in Local Knowledge &amp; Safe Python</strong></span>
+            </button>
+            <button class="chapter-btn" type="button" role="tab" data-cap="workflows" aria-selected="false">
+              <span class="num">05</span>
+              <span><strong>Guided Walkthroughs &amp; Workflows</strong></span>
+            </button>
+            <button class="chapter-btn" type="button" role="tab" data-cap="gestures" aria-selected="false">
+              <span class="num">06</span>
+              <span><strong>Hand-Gesture Mouse &amp; Clean Lifecycle</strong></span>
+            </button>
+          </div>
+
+          <div class="theater-stage liquid-glass liquid-glass-refract reveal">
+            <div>
+              <div class="meta-pills" id="cap-pills" style="margin-bottom:18px;">
+                <span class="pill pill-cyan">Online: Gemini Vision</span>
+                <span class="pill pill-emerald">Offline: Ollama moondream</span>
+                <span class="pill pill-amber">Requires: screen_view</span>
+              </div>
+              <h3 id="cap-title" style="font-size:1.5rem; margin-bottom:14px;">Screen Inspection &amp; Point at Screen</h3>
+              <p id="cap-desc" style="color:var(--text-muted); font-size:0.98rem; margin:0;">
+                Capture and inspect your active screen or a pointed region to explain errors, UI layouts, or content. Every capture checks the fail-closed screen_view permission first.
+              </p>
             </div>
 
-            <p style="margin: 0 0 18px; color: var(--muted); font-size: 0.93rem;">
-              Add your <code>GEMINI_API_KEY</code> in <code>.env</code> for online Gemini Live voice and vision, or launch immediately in <strong>Offline Local Mode</strong>. Optional standalone build: <code>python build_exe.py</code>.
+            <div>
+              <div style="font-size:0.74rem; text-transform:uppercase; letter-spacing:0.12em; color:var(--text-dim); margin-bottom:8px;">Verified Repository Modules</div>
+              <div class="code-ref" id="cap-ref">desktop_agent.py · nova_offline_ai.py · permissions.py</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================
+         04 — NOVA 3D SPIRAL ROADMAP
+         ======================================================= -->
+    <section class="spiral-roadmap" id="roadmap" aria-label="Glass Nova 3D Spiral Roadmap">
+      <div id="sr-journey" style="position:relative; height:100%;">
+        <div class="sr-sticky" id="sr-sticky">
+          <div id="sr-stage"></div>
+          <div class="sr-completion-flash" id="sr-completionFlash" aria-hidden="true"></div>
+
+          <div class="sr-hud">
+            <span>04 · NOVA / EVOLUTION</span>
+            <span id="sr-chapter">OVERVIEW</span>
+          </div>
+
+          <a class="sr-skip-btn" href="#companions">Skip Roadmap &darr;</a>
+          <button id="sr-soundToggle" type="button" aria-label="Toggle milestone sound">SOUND OFF</button>
+
+          <div class="sr-fallback" id="sr-fallback" hidden>
+            <div class="sr-outro-eyebrow">NOVA / EVOLUTION</div>
+            <p style="color:#a6b5c8; font-size:0.9rem; margin:8px 0 18px;">3D WebGL view unavailable in this environment &mdash; here is the 5-stage Glass Nova roadmap:</p>
+            <div class="sr-fallback-grid">
+              <div><strong>01 / CORE</strong><span>PySide6 UI, Gemini Live, offline mode, tray &amp; fail-closed permissions.</span></div>
+              <div><strong>02 / MIND</strong><span>Local Ollama AI, memory, knowledge indexing &amp; offline agent.</span></div>
+              <div><strong>03 / SENSES</strong><span>Hey Nova wake word, gesture mouse, screen &amp; video understanding.</span></div>
+              <div><strong>04 / ACTION</strong><span>Verified desktop, browser, file tools &amp; multi-step workflows.</span></div>
+              <div><strong>05 / EVOLUTION</strong><span>Persistent workflows today; adaptive personalization as future vision.</span></div>
+            </div>
+          </div>
+
+          <div class="sr-overlay" id="sr-info">
+            <div class="sr-num" id="sr-num">01 / CORE</div>
+            <h2 id="sr-heading">Foundation &amp; architecture.</h2>
+            <p id="sr-desc">PySide6 desktop UI, backend engine, Gemini Live voice and typed chat, structured IPC, offline mode, system tray, permissions, action routing and verification.</p>
+            <div class="sr-milestone-status upcoming" id="sr-milestoneStatus">UPCOMING</div>
+            <ul class="sr-feature-list" id="sr-featureList"></ul>
+            <button class="sr-details-btn" type="button" id="sr-detailsBtn">Explore waypoint</button>
+          </div>
+
+          <div class="sr-outro" id="sr-outro">
+            <div>
+              <div class="sr-outro-eyebrow">The journey continues</div>
+              <div class="sr-outro-title">Not the end.<br><span>The beginning.</span></div>
+              <p>Nova's roadmap is a direction &mdash; not a limit.</p>
+            </div>
+          </div>
+
+          <div class="sr-scrolllabel" id="sr-scrolllabel">Scroll to zoom into waypoint 01</div>
+          <div id="sr-waypointNav" role="group" aria-label="Jump to roadmap waypoint">
+            <button type="button" data-way="0">01</button>
+            <button type="button" data-way="1">02</button>
+            <button type="button" data-way="2">03</button>
+            <button type="button" data-way="3">04</button>
+            <button type="button" data-way="4">05</button>
+          </div>
+          <div class="sr-progress"><span id="sr-bar"></span></div>
+        </div>
+      </div>
+
+      <div class="sr-detail-modal" id="sr-detailModal" role="dialog" aria-modal="true" aria-labelledby="sr-detailTitle">
+        <div class="sr-detail-card">
+          <div class="sr-outro-eyebrow" id="sr-detailEyebrow">WAYPOINT</div>
+          <h3 id="sr-detailTitle">Waypoint Details</h3>
+          <p id="sr-detailText"></p>
+          <button type="button" id="sr-detailClose">Close</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================
+         05 — 3D INTERACTIVE COMPANIONS ORBIT
+         ======================================================= -->
+    <section class="scene scene-divider" id="companions">
+      <div class="container">
+        <div class="scene-intro reveal">
+          <div class="scene-kicker"><span class="idx">05</span> Companions</div>
+          <h2>Four animated PySide6 companions, floating on your desktop.</h2>
+          <p>Each companion runs as a frameless transparent Windows overlay. Swipe, tilt, or click to orbit through all four real companion characters.</p>
+        </div>
+
+        <div class="companion-showcase">
+          <div class="pedestal-wrap reveal">
+            <div class="pedestal-stage" id="pedestal-stage" data-tilt-stage data-tilt-max="9">
+              <div class="pedestal-ring" aria-hidden="true"></div>
+              <img
+                class="pedestal-sprite"
+                id="pedestal-sprite"
+                src="assets/companion-robot.png"
+                alt="Original NOVA Robot animated desktop companion"
+                width="204"
+                height="204"
+              >
+              <div class="pedestal-disc" aria-hidden="true"></div>
+              <div class="orbit-controls">
+                <button class="orbit-btn" type="button" id="comp-prev" aria-label="Previous companion">&larr;</button>
+                <span class="orbit-hint">Swipe or click to orbit</span>
+                <button class="orbit-btn" type="button" id="comp-next" aria-label="Next companion">&rarr;</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="reveal">
+            <h3 id="comp-name" style="font-size:1.6rem;">NOVA Robot</h3>
+            <p id="comp-desc" style="color:var(--text-muted); margin:0;">
+              The flagship PySide6 desktop companion with glowing visor feedback on a frameless transparent Windows overlay.
             </p>
-            <a class="btn primary" href="https://github.com/tejaswaroop30/Glass-Nova">Open GitHub Repository</a>
+
+            <div class="keycap-deck companion-roster" role="group" aria-label="Select animated desktop companion">
+              <button class="keycap keycap-companion" type="button" data-companion="robot" data-accent="cyan" aria-pressed="true">
+                <span class="keycap-body">
+                  <span class="keycap-dish">
+                    <img src="assets/companion-robot.png" alt="NOVA Robot companion preview thumbnail" width="66" height="66">
+                    <span class="keycap-legend">
+                      <span class="keycap-title">NOVA Robot</span>
+                      <span class="keycap-sub">Visor bot</span>
+                    </span>
+                  </span>
+                </span>
+              </button>
+              <button class="keycap keycap-companion" type="button" data-companion="ghost" data-accent="violet" aria-pressed="false">
+                <span class="keycap-body">
+                  <span class="keycap-dish">
+                    <img src="assets/companion-ghost.png" alt="Ghost companion preview thumbnail" width="66" height="66">
+                    <span class="keycap-legend">
+                      <span class="keycap-title">Ghost</span>
+                      <span class="keycap-sub">Spirit overlay</span>
+                    </span>
+                  </span>
+                </span>
+              </button>
+              <button class="keycap keycap-companion" type="button" data-companion="pet" data-accent="emerald" aria-pressed="false">
+                <span class="keycap-body">
+                  <span class="keycap-dish">
+                    <img src="assets/companion-pet.png" alt="NOVA Pet companion preview thumbnail" width="66" height="66">
+                    <span class="keycap-legend">
+                      <span class="keycap-title">NOVA Pet</span>
+                      <span class="keycap-sub">Sprite pet</span>
+                    </span>
+                  </span>
+                </span>
+              </button>
+              <button class="keycap keycap-companion" type="button" data-companion="cloudy" data-accent="blue" aria-pressed="false">
+                <span class="keycap-body">
+                  <span class="keycap-dish">
+                    <img src="assets/companion-cloudy.png" alt="Cloudy blue mini-bot companion preview thumbnail" width="66" height="66">
+                    <span class="keycap-legend">
+                      <span class="keycap-title">Cloudy</span>
+                      <span class="keycap-sub">Mini-bot</span>
+                    </span>
+                  </span>
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================
+         05 — PRIVACY & FAIL-CLOSED SECURITY
+         ======================================================= -->
+    <section class="scene scene-divider" id="security">
+      <div class="container">
+        <div class="security-layout">
+          <div class="reveal">
+            <div class="scene-kicker"><span class="idx">06</span> Privacy &amp; Control</div>
+            <h2>Fail-closed permissions that AI models cannot self-grant.</h2>
+            <p style="color:var(--text-muted); margin:0 0 10px;">
+              AI tools can only check status or revoke permissions — never grant them. Tap any of the 9 categories to inspect its rule:
+            </p>
+
+            <div class="keycap-deck perm-matrix" role="group" aria-label="Nine Glass Nova permission gates">
+              <button class="keycap keycap-perm" type="button" data-perm="screen_view" data-accent="cyan" aria-pressed="true">
+                <span class="keycap-body"><span class="keycap-dish"><span class="keycap-title">screen_view</span></span></span>
+              </button>
+              <button class="keycap keycap-perm high-risk" type="button" data-perm="continuous_screen" data-accent="amber" aria-pressed="false">
+                <span class="keycap-body"><span class="keycap-dish"><span class="keycap-title">continuous_screen</span></span></span>
+              </button>
+              <button class="keycap keycap-perm" type="button" data-perm="mouse_keyboard" data-accent="violet" aria-pressed="false">
+                <span class="keycap-body"><span class="keycap-dish"><span class="keycap-title">mouse_keyboard</span></span></span>
+              </button>
+              <button class="keycap keycap-perm" type="button" data-perm="file_read" data-accent="violet" aria-pressed="false">
+                <span class="keycap-body"><span class="keycap-dish"><span class="keycap-title">file_read</span></span></span>
+              </button>
+              <button class="keycap keycap-perm" type="button" data-perm="file_write" data-accent="violet" aria-pressed="false">
+                <span class="keycap-body"><span class="keycap-dish"><span class="keycap-title">file_write</span></span></span>
+              </button>
+              <button class="keycap keycap-perm high-risk" type="button" data-perm="file_delete" data-accent="amber" aria-pressed="false">
+                <span class="keycap-body"><span class="keycap-dish"><span class="keycap-title">file_delete</span></span></span>
+              </button>
+              <button class="keycap keycap-perm" type="button" data-perm="browser_action" data-accent="blue" aria-pressed="false">
+                <span class="keycap-body"><span class="keycap-dish"><span class="keycap-title">browser_action</span></span></span>
+              </button>
+              <button class="keycap keycap-perm high-risk" type="button" data-perm="form_purchase" data-accent="amber" aria-pressed="false">
+                <span class="keycap-body"><span class="keycap-dish"><span class="keycap-title">form_purchase</span></span></span>
+              </button>
+              <button class="keycap keycap-perm" type="button" data-perm="media_access" data-accent="cyan" aria-pressed="false">
+                <span class="keycap-body"><span class="keycap-dish"><span class="keycap-title">media_access</span></span></span>
+              </button>
+            </div>
+
+            <div class="perm-detail" id="perm-detail" aria-live="polite">
+              <strong>screen_view:</strong> Required before any single-frame screenshot or visual screen inspection in both Online and Offline modes.
+            </div>
+
+            <div class="disclosure-box">
+              <strong>Honest Privacy Disclosure:</strong> In Online Mode, prompts, voice audio, and triggered screen captures are sent to the Google Gemini API. Local settings, history, and permission states are stored in <code>%LOCALAPPDATA%\GlassNova</code> as plaintext JSON with secret redaction — Windows DPAPI encryption is not yet implemented.
+            </div>
           </div>
 
-          <div class="glass-panel reveal">
-            <h3>System Requirements</h3>
-            <ul class="clean-list" style="margin-top: 14px;">
-              <li><strong>Operating System:</strong> Windows 10 or Windows 11.</li>
-              <li><strong>Python:</strong> Python 3.11 or 3.12 (recommended).</li>
-              <li><strong>API Key (Optional):</strong> Google Gemini API key for Gemini Live voice/chat and vision features.</li>
-              <li><strong>Microphone &amp; Speakers:</strong> Required for voice conversations and offline "Hey Nova" wake-word detection.</li>
-              <li><strong>Webcam (Optional):</strong> Required only if you enable Hand Gesture Mouse Control.</li>
-              <li><strong>Automated CI:</strong> Verified on Windows across 6 automated test suites in GitHub Actions.</li>
+          <div class="vault-frame liquid-glass reveal" data-tilt-stage data-tilt-max="5">
+            <div class="frame-chrome">
+              <span class="frame-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+              <span>Real Permission Prompt &mdash; Fail-Closed UI</span>
+            </div>
+            <img
+              src="assets/nova-permission.png"
+              alt="Real Glass Nova permission confirmation dialog requiring explicit user approval before privileged desktop actions"
+              width="900"
+              height="620"
+            >
+            <div class="caption">Actual PySide6 confirmation dialog shown before sensitive actions run.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================
+         06 — SETUP, REQUIREMENTS & HONEST PROJECT STATUS
+         ======================================================= -->
+    <section class="scene scene-divider" id="setup">
+      <div class="container">
+        <div class="scene-intro reveal">
+          <div class="scene-kicker"><span class="idx">07</span> Setup &amp; Status</div>
+          <h2>Honest requirements, transparent status, open source on GitHub.</h2>
+          <p><code>Start_Glass_Nova.bat</code> sets up the virtual environment and installs missing dependencies only when needed — subsequent launches start fast, even offline.</p>
+        </div>
+
+        <div class="status-grid">
+          <article class="editorial-panel reveal">
+            <h3>Verified Requirements</h3>
+            <ul class="check-list" style="margin-top:14px;">
+              <li><strong>OS:</strong> Windows 10 or Windows 11 (64-bit).</li>
+              <li><strong>Python:</strong> Python 3.11 or 3.12 recommended for PySide6 &amp; Vosk compatibility.</li>
+              <li><strong>Online Mode (Optional):</strong> Internet + your own <code>GEMINI_API_KEY</code>.</li>
+              <li><strong>Offline AI (Optional):</strong> Local Ollama with <code>qwen2.5:3b</code> &amp; <code>moondream</code>. Reference tested hardware for local models: Intel i5-12450H, 16 GB RAM, RTX 3050 (4 GB VRAM).</li>
             </ul>
+          </article>
+
+          <article class="editorial-panel reveal">
+            <h3>Current Limitations (Active Development)</h3>
+            <ul class="check-list" style="margin-top:14px;">
+              <li><strong>Source Install Today:</strong> No signed <code>.exe</code> installer release yet — run via <code>Start_Glass_Nova.bat</code> or build locally with <code>build_exe.py</code>.</li>
+              <li><strong>Settings UI Gaps:</strong> Graphical pickers for Ollama models and Local Knowledge folders are not yet built — configure via <code>.env</code> or chat commands.</li>
+              <li><strong>Local Storage:</strong> Redacted plaintext JSON in <code>%LOCALAPPDATA%\GlassNova</code> (Windows DPAPI encryption is planned).</li>
+              <li><strong>Windows-Only:</strong> Relies on Windows UIAutomation, SAPI TTS, and Win32 APIs.</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="terminal-card reveal">
+          <div class="terminal-head">
+            <span>PowerShell &mdash; Clone &amp; Launch Glass Nova</span>
+            <button class="btn btn-glass btn-sm" type="button" id="copy-install">Copy Commands</button>
           </div>
+          <pre id="install-code"><code># 1. Clone the repository
+git clone https://github.com/tejaswaroop30/Glass-Nova.git
+cd Glass-Nova
+
+# 2. Launch Glass Nova (creates .venv on first run; fast launch afterwards)
+.\Start_Glass_Nova.bat
+
+# 3. Optional: enable Offline AI reasoning &amp; local screen vision via Ollama
+ollama pull qwen2.5:3b
+ollama pull moondream</code></pre>
         </div>
-      </div>
-    </section>
 
-    <!-- FAQ -->
-    <section id="faq" aria-labelledby="faq-heading">
-      <div class="container">
-        <div class="section-head reveal">
-          <span class="kicker">FAQ</span>
-          <h2 id="faq-heading">Frequently Asked Questions</h2>
-        </div>
-
-        <div class="faq-grid">
-          <details class="reveal">
-            <summary>What is Glass Nova?</summary>
-            <p>Glass Nova is a Python and PySide6 AI desktop assistant for Windows 10/11 combining Gemini Live voice and chat, offline "Hey Nova" wake-word activation, verified desktop automation, screen/PDF/video understanding, hand-gesture mouse control, and animated companions.</p>
-          </details>
-
-          <details class="reveal">
-            <summary>Is Glass Nova free?</summary>
-            <p>The Glass Nova software is free to download and run locally from GitHub. Online Gemini Live and vision features use your own Google Gemini API key (subject to Google's API quota/pricing), while Offline Local Mode runs completely free on your PC.</p>
-          </details>
-
-          <details class="reveal">
-            <summary>Does Nova work offline?</summary>
-            <p>Yes. Offline Local Mode handles common Windows actions locally with 0ms latency — opening/closing apps and folders, volume and brightness, window/tab controls, clipboard, screenshots, system status, tasks, memories, calculator math, companion controls, hand gestures, and permission commands.</p>
-          </details>
-
-          <details class="reveal">
-            <summary>Does Nova require an API key?</summary>
-            <p>No API key is required for Offline Local Mode. Adding <code>GEMINI_API_KEY</code> in <code>.env</code> unlocks online Gemini Live voice conversations, open-ended Q&amp;A, and AI vision analysis.</p>
-          </details>
-
-          <details class="reveal">
-            <summary>How does the permission system work?</summary>
-            <p>Glass Nova uses a fail-closed permission manager with 9 separate categories. Sensitive actions prompt you with the exact category and target action, allowing <strong>Allow Once</strong>, <strong>Allow for Session</strong>, or <strong>Deny</strong> by click or voice.</p>
-          </details>
-
-          <details class="reveal">
-            <summary>Which Windows versions are supported?</summary>
-            <p>Windows 10 and Windows 11 are supported. macOS and Linux are not supported because Glass Nova relies on native Win32, Windows UIAutomation, PyCAW, and SAPI APIs.</p>
-          </details>
-
-          <details class="reveal">
-            <summary>How do I install Nova?</summary>
-            <p>Clone <code>https://github.com/tejaswaroop30/Glass-Nova.git</code> and run <code>Start_Glass_Nova.bat</code>, which automatically sets up the Python virtual environment, installs dependencies, and starts the app.</p>
-          </details>
-
-          <details class="reveal">
-            <summary>What features require an internet connection?</summary>
-            <p>Gemini Live voice/chat conversations, general AI Q&amp;A, web searches, and Gemini Vision screen/PDF/video explanations require internet access and a valid Gemini API key. Local system commands and Vosk wake-word detection work offline (after the one-time Vosk model download).</p>
-          </details>
-        </div>
-      </div>
-    </section>
-
-    <!-- Final CTA -->
-    <section aria-labelledby="cta-heading" style="padding-top: 20px;">
-      <div class="container">
-        <div class="cta-banner reveal">
-          <h2 id="cta-heading">Ready to Explore Glass Nova?</h2>
-          <p>
-            Browse the modular Python source code, inspect the fail-closed security tests, or launch Glass Nova on your Windows desktop.
-          </p>
-          <div class="cta-actions">
-            <a class="btn primary" href="https://github.com/tejaswaroop30/Glass-Nova">View on GitHub</a>
-            <a class="btn" href="https://github.com/tejaswaroop30/Glass-Nova/blob/main/README.md">Read Full README</a>
-            <a class="btn" href="https://github.com/tejaswaroop30/Glass-Nova/actions">CI Test Status</a>
-          </div>
+        <div class="hero-cta" style="margin-top:26px;">
+          <a class="btn btn-primary" href="https://github.com/tejaswaroop30/Glass-Nova" target="_blank" rel="noopener noreferrer">Open GitHub Repository</a>
+          <a class="btn btn-glass" href="https://github.com/tejaswaroop30/Glass-Nova/blob/main/README.md" target="_blank" rel="noopener noreferrer">Read Full README</a>
+          <a class="btn btn-glass" href="https://github.com/tejaswaroop30/Glass-Nova/issues" target="_blank" rel="noopener noreferrer">Open Issues</a>
         </div>
       </div>
     </section>
   </main>
 
-  <footer>
+  <footer class="site-footer">
     <div class="container footer-inner">
-      <span>Glass Nova — AI Desktop Assistant for Windows</span>
-      <nav class="footer-links" aria-label="Footer links">
-        <a href="https://github.com/tejaswaroop30/Glass-Nova">GitHub Repository</a>
-        <a href="https://github.com/tejaswaroop30/Glass-Nova/blob/main/CONTRIBUTING.md">Contributing</a>
-        <a href="https://github.com/tejaswaroop30/Glass-Nova/blob/main/README.md">Documentation</a>
-        <a href="https://github.com/tejaswaroop30/Glass-Nova/actions">CI Status</a>
-      </nav>
+      <div>
+        <strong style="color:var(--text);">Glass Nova</strong> &mdash; Open-source Windows AI desktop assistant. Python · PySide6 · Gemini Live · Vosk · Windows SAPI · Ollama.
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/tejaswaroop30/Glass-Nova" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/tejaswaroop30/Glass-Nova/blob/main/README.md" target="_blank" rel="noopener noreferrer">README</a>
+        <a href="https://github.com/tejaswaroop30/Glass-Nova/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">Contributing</a>
+        <a href="#reveal">Back to top</a>
+      </div>
     </div>
   </footer>
 
-  <script>
-    (function () {
-      // Mobile navigation menu
-      var menuBtn = document.getElementById("menu-btn");
-      var nav = document.getElementById("site-nav");
-      if (menuBtn && nav) {
-        menuBtn.addEventListener("click", function () {
-          var open = nav.classList.toggle("open");
-          menuBtn.setAttribute("aria-expanded", String(open));
-        });
-        nav.querySelectorAll("a").forEach(function (link) {
-          link.addEventListener("click", function () {
-            nav.classList.remove("open");
-            menuBtn.setAttribute("aria-expanded", "false");
-          });
-        });
-      }
-
-      // Copy installation commands
-      var copyBtn = document.getElementById("copy-btn");
-      var copyStatus = document.getElementById("copy-status");
-      var codeEl = document.getElementById("install-code");
-      if (copyBtn && codeEl) {
-        copyBtn.addEventListener("click", function () {
-          var text = codeEl.textContent.trim();
-          var done = function () {
-            copyStatus.textContent = "Copied!";
-            setTimeout(function () { copyStatus.textContent = ""; }, 2200);
-          };
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(text).then(done).catch(function () {
-              copyStatus.textContent = "Select & copy manually";
-            });
-          } else {
-            var ta = document.createElement("textarea");
-            ta.value = text;
-            document.body.appendChild(ta);
-            ta.select();
-            try { document.execCommand("copy"); done(); } catch (e) {}
-            document.body.removeChild(ta);
-          }
-        });
-      }
-
-      // Lightweight scroll reveal
-      var items = document.querySelectorAll(".reveal");
-      if ("IntersectionObserver" in window) {
-        var io = new IntersectionObserver(function (entries) {
-          entries.forEach(function (entry) {
-            if (entry.isIntersecting) {
-              entry.target.classList.add("visible");
-              io.unobserve(entry.target);
-            }
-          });
-        }, { threshold: 0.1 });
-        items.forEach(function (el) { io.observe(el); });
-      } else {
-        items.forEach(function (el) { el.classList.add("visible"); });
-      }
-    })();
-  </script>
+  <script src="scene.js?v=3" defer></script>
+  <script src="app.js?v=2" defer></script>
+  <script type="module" src="spiral-roadmap.js?v=2"></script>
 </body>
 </html>
