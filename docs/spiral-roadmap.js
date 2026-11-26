@@ -100,23 +100,25 @@ if (!journey || !sticky || !container) {
     const g = new THREE.Group();
     g.position.copy(curve.getPoint(t));
 
+    const isHiRes = window.innerWidth >= 700;
+    const tw = isHiRes ? 1024 : 512, th = isHiRes ? 512 : 256, ts = isHiRes ? 2 : 1;
     const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 256;
+    canvas.width = tw;
+    canvas.height = th;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = baseHex[i];
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, tw, th);
 
-    const lighting = ctx.createRadialGradient(130, 60, 15, 260, 130, 325);
+    const lighting = ctx.createRadialGradient(130 * ts, 60 * ts, 15 * ts, 260 * ts, 130 * ts, 325 * ts);
     lighting.addColorStop(0, 'rgba(255,255,255,.28)');
     lighting.addColorStop(0.48, 'rgba(255,255,255,.07)');
     lighting.addColorStop(1, 'rgba(0,0,0,.52)');
     ctx.fillStyle = lighting;
-    ctx.fillRect(0, 0, 512, 256);
+    ctx.fillRect(0, 0, tw, th);
 
-    for (let c = 0; c < 30; c++) {
-      const x = Math.random() * 512, y = Math.random() * 256;
-      const rx = 8 + Math.random() * 22, ry = 5 + Math.random() * 14;
+    for (let c = 0; c < 34; c++) {
+      const x = Math.random() * tw, y = Math.random() * th;
+      const rx = (8 + Math.random() * 22) * ts, ry = (5 + Math.random() * 14) * ts;
       ctx.save();
       ctx.translate(x, y);
       ctx.scale(rx, ry);
@@ -129,15 +131,15 @@ if (!journey || !sticky || !container) {
       ctx.fill();
       ctx.restore();
     }
-    for (let b = 0; b < 14; b++) {
+    for (let b = 0; b < 18; b++) {
       ctx.beginPath();
-      const y = b * 18 + Math.random() * 6;
+      const y = (b * 14.5 + Math.random() * 6) * ts;
       ctx.moveTo(0, y);
-      for (let x = 0; x <= 512; x += 8) {
-        ctx.lineTo(x, y + Math.sin(x * 0.036 + b) * 2 + Math.sin(x * 0.012 + b * 2) * 3);
+      for (let x = 0; x <= tw; x += 6 * ts) {
+        ctx.lineTo(x, y + Math.sin(x * (0.036 / ts) + b) * 2 * ts + Math.sin(x * (0.012 / ts) + b * 2) * 3 * ts);
       }
       ctx.strokeStyle = 'rgba(255,255,255,.045)';
-      ctx.lineWidth = 1.5 + Math.random() * 2;
+      ctx.lineWidth = (1.5 + Math.random() * 2) * ts;
       ctx.stroke();
     }
 
@@ -440,7 +442,7 @@ if (!journey || !sticky || !container) {
       if (lastRenderedSt !== -1) {
         lastRenderedSt = -1;
         chapter.textContent = 'OVERVIEW';
-        scrolllabel.textContent = 'Scroll to zoom into waypoint 01';
+        scrolllabel.innerHTML = '<span class="sr-hint-icon">⌄</span> Scroll to zoom into waypoint 01';
       }
     } else if (progress >= 0.975) {
       if (lastRenderedSt !== 99) {
