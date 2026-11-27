@@ -195,7 +195,8 @@ class OllamaClient:
     def _load_config(self) -> None:
         try:
             if _CONFIG_FILE.is_file():
-                data = json.loads(_CONFIG_FILE.read_text(encoding="utf-8"))
+                from nova_dpapi import load_protected_json
+                data = load_protected_json(_CONFIG_FILE)
                 if isinstance(data, dict):
                     if not self.preferred_model and data.get("model"):
                         self.preferred_model = str(data["model"]).strip()
@@ -208,20 +209,16 @@ class OllamaClient:
 
     def save_config(self) -> None:
         try:
-            _STATE_DIR.mkdir(parents=True, exist_ok=True)
-            tmp_file = _CONFIG_FILE.with_suffix(".json.tmp")
-            tmp_file.write_text(
-                json.dumps(
-                    {
-                        "model": self.preferred_model,
-                        "vision_model": self.preferred_vision_model,
-                        "cpu_only": self.cpu_only,
-                    },
-                    indent=2,
-                ),
-                encoding="utf-8",
+            from nova_dpapi import dump_protected_json
+            dump_protected_json(
+                _CONFIG_FILE,
+                {
+                    "model": self.preferred_model,
+                    "vision_model": self.preferred_vision_model,
+                    "cpu_only": self.cpu_only,
+                },
+                indent=2,
             )
-            os.replace(tmp_file, _CONFIG_FILE)
         except Exception:
             pass
 

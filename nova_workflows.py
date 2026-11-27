@@ -160,16 +160,16 @@ class WorkflowStore:
             "created_at": workflow.created_at,
             "steps": [asdict(step) for step in workflow.steps],
         }
-        temp = path.with_suffix(".json.tmp")
-        temp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-        temp.replace(path)
+        from nova_dpapi import dump_protected_json
+        dump_protected_json(path, payload, indent=2)
         return path
 
     def load(self, path: str | Path) -> Workflow:
         target = Path(path).expanduser().resolve()
         if target.parent != self.directory:
             raise ValueError("Workflow must be loaded from Nova's workflows directory.")
-        data = json.loads(target.read_text(encoding="utf-8"))
+        from nova_dpapi import load_protected_json
+        data = load_protected_json(target)
         steps = [WorkflowStep(**item) for item in data.get("steps", [])]
         return Workflow(
             data["workflow_id"],

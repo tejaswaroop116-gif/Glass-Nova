@@ -2295,6 +2295,22 @@ class LiveManager:
                         auto_nearest=msg.get("auto_nearest"),
                         calibrate_now=bool(msg.get("calibrate_now", False)),
                     )
+                elif cmd == "offline_config":
+                    if "model" in msg:
+                        offline_ollama.preferred_model = str(msg.get("model") or "").strip()
+                    if "vision_model" in msg:
+                        offline_ollama.preferred_vision_model = str(msg.get("vision_model") or "").strip()
+                    if "cpu_only" in msg:
+                        offline_ollama.cpu_only = bool(msg.get("cpu_only"))
+                    offline_ollama.save_config()
+                    emit(
+                        "log",
+                        text=(
+                            f"[Offline AI] Config updated: chat='{offline_ollama.preferred_model or 'auto'}', "
+                            f"vision='{offline_ollama.preferred_vision_model or 'auto'}', "
+                            f"mode={'CPU-only' if offline_ollama.cpu_only else 'GPU + CPU fallback'}."
+                        ),
+                    )
                 elif cmd in ("shutdown", "quit"):
                     self.stop_evt.set()
                     return

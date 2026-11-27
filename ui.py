@@ -4,12 +4,16 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QProcess, QProcessEnvironment, QTimer, QSettings, QPointF, QRectF, QPoint, QEvent, Signal, QObject, QThread, QPropertyAnimation, QVariantAnimation, QEasingCurve, QAbstractAnimation
 from PySide6.QtGui import QColor as C, QPainter, QPen, QBrush, QRadialGradient, QLinearGradient, QPainterPath, QCursor, QGuiApplication, QIcon, QPixmap, QShortcut, QKeySequence
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-                               QGridLayout, QStackedWidget, QTextEdit, QLineEdit, QMessageBox, QInputDialog, QSlider, QSizeGrip, QMenu, QSystemTrayIcon, QDialog, QListWidget, QListWidgetItem, QScrollArea)
+                               QGridLayout, QStackedWidget, QTextEdit, QLineEdit, QMessageBox, QInputDialog, QSlider, QSizeGrip, QMenu, QSystemTrayIcon, QDialog, QListWidget, QListWidgetItem, QScrollArea, QComboBox, QFileDialog)
 from permissions import CATEGORIES, PermissionManager
 from wake_word import WakeWordListener
 from nova_companion_bridge import CompanionBridge
 from nova_lifecycle import LifecycleManager, SingleInstanceGuard
 from nova_voice_control import VoiceControlState, match_voice_control_command
+from nova_offline_ai import OllamaClient, RECOMMENDED_4GB_TEXT_MODELS, RECOMMENDED_4GB_VISION_MODELS
+from nova_local_knowledge import knowledge_store
+
+_UI_OLLAMA = OllamaClient()
 from nova_screen_pointing import RegionSelector, ScreenPointingService
 from nova_walkthrough import Walkthrough, WalkthroughStep, walkthrough_from_plan
 from nova_workflows import Workflow, WorkflowStep, WorkflowRecorder, WorkflowStore, WorkflowPlayer
@@ -521,6 +525,47 @@ class Nova(QMainWindow):
         self.mic_sens_settings = self._create_mic_sensitivity_widget()
         pv.addWidget(self.mic_sens_settings)
 
+        # Offline AI (Ollama) & Local Knowledge section
+        off_box, off_v = self.panel(
+            'Offline AI & Local Knowledge',
+            'Choose local Ollama models, GPU/CPU mode, and opt-in folders for offline semantic search.',
+        )
+        chat_row = QHBoxLayout()
+        chat_lbl = QLabel('Ollama Chat Model:'); chat_lbl.setObjectName('muted')
+        self.ollama_chat_combo = QComboBox(); self.ollama_chat_combo.setEditable(True)
+        chat_row.addWidget(chat_lbl); chat_row.addWidget(self.ollama_chat_combo, 1)
+        off_v.addLayout(chat_row)
+
+        vis_row = QHBoxLayout()
+        vis_lbl = QLabel('Ollama Vision Model:'); vis_lbl.setObjectName('muted')
+        self.ollama_vision_combo = QComboBox(); self.ollama_vision_combo.setEditable(True)
+        vis_row.addWidget(vis_lbl); vis_row.addWidget(self.ollama_vision_combo, 1)
+        off_v.addLayout(vis_row)
+
+        model_btns = QHBoxLayout()
+        self.ollama_apply_btn = self.button('Apply Models', self._apply_offline_models)
+        self.ollama_refresh_btn = self.button('Refresh Installed', self._refresh_offline_settings)
+        self.ollama_gpu_btn = self.button('', self._toggle_ollama_cpu_only)
+        model_btns.addWidget(self.ollama_apply_btn); model_btns.addWidget(self.ollama_refresh_btn); model_btns.addWidget(self.ollama_gpu_btn)
+        off_v.addLayout(model_btns)
+
+        kb_lbl = QLabel('Opt-In Local Knowledge Folders:'); kb_lbl.setObjectName('muted')
+        off_v.addWidget(kb_lbl)
+        self.kb_folders_list = QListWidget(); self.kb_folders_list.setMaximumHeight(96)
+        off_v.addWidget(self.kb_folders_list)
+
+        kb_btns = QHBoxLayout()
+        self.kb_add_btn = self.button('+ Add Folder…', self._kb_add_folder)
+        self.kb_remove_btn = self.button('Remove Selected', self._kb_remove_folder)
+        self.kb_reindex_btn = self.button('Re-index All', self._kb_reindex_all)
+        kb_btns.addWidget(self.kb_add_btn); kb_btns.addWidget(self.kb_remove_btn); kb_btns.addWidget(self.kb_reindex_btn)
+        off_v.addLayout(kb_btns)
+
+        self.offline_settings_lbl = QLabel(''); self.offline_settings_lbl.setObjectName('muted'); self.offline_settings_lbl.setWordWrap(True)
+        off_v.addWidget(self.offline_settings_lbl)
+        pv.addWidget(off_box)
+        self._refresh_offline_settings(probe_ollama=False)
+
         # Security & Permissions section
         sec_box, sec_v = self.panel('Security & Permissions', 'Manage active session permissions for visual screen and desktop controls.')
         self.perm_status_lbl = QLabel(self._get_permissions_summary()); self.perm_status_lbl.setObjectName('muted'); self.perm_status_lbl.setWordWrap(True)
@@ -765,6 +810,141 @@ class Nova(QMainWindow):
         now = is_run_at_startup()
         set_run_at_startup(not now)
         self._update_startup_btn_text()
+
+    # -- Offline AI (Ollama) & Local Knowledge Settings
+    def _update_ollama_gpu_btn(self):
+        if hasattr(self, 'ollama_gpu_btn'):
+            self.ollama_gpu_btn.setText('Mode: CPU-Only' if _UI_OLLAMA.cpu_only else 'Mode: GPU + CPU')
+
+    def _refresh_offline_settings(self, probe_ollama=True):
+        installed_chat, installed_vision = [], []
+        if probe_ollama:
+            try:
+                for m in _UI_OLLAMA.list_models(timeout=1.2, force_refresh=True):
+                    name = m.get('name', '')
+                    if not name:
+                        continue
+                    if m.get('is_vision'):
+                        installed_vision.append(name)
+                    else:
+                        installed_chat.append(name)
+            except Exception:
+                pass
+        chat_choices = list(dict.fromkeys(
+            ([_UI_OLLAMA.preferred_model] if _UI_OLLAMA.preferred_model else [])
+            + installed_chat
+            + list(RECOMMENDED_4GB_TEXT_MODELS)
+        ))
+        vision_choices = list(dict.fromkeys(
+            ([_UI_OLLAMA.preferred_vision_model] if _UI_OLLAMA.preferred_vision_model else [])
+            + installed_vision
+            + list(RECOMMENDED_4GB_VISION_MODELS)
+        ))
+        if hasattr(self, 'ollama_chat_combo'):
+            self.ollama_chat_combo.clear()
+            self.ollama_chat_combo.addItem('(Auto-select best installed)', '')
+            for name in chat_choices:
+                self.ollama_chat_combo.addItem(name, name)
+            self.ollama_chat_combo.setCurrentText(_UI_OLLAMA.preferred_model or '(Auto-select best installed)')
+        if hasattr(self, 'ollama_vision_combo'):
+            self.ollama_vision_combo.clear()
+            self.ollama_vision_combo.addItem('(Auto-select best vision)', '')
+            for name in vision_choices:
+                self.ollama_vision_combo.addItem(name, name)
+            self.ollama_vision_combo.setCurrentText(_UI_OLLAMA.preferred_vision_model or '(Auto-select best vision)')
+        self._update_ollama_gpu_btn()
+        if hasattr(self, 'kb_folders_list'):
+            self.kb_folders_list.clear()
+            for folder in knowledge_store.list_folders():
+                self.kb_folders_list.addItem(QListWidgetItem(folder))
+        if hasattr(self, 'offline_settings_lbl'):
+            if probe_ollama:
+                total_inst = len(installed_chat) + len(installed_vision)
+                self.offline_settings_lbl.setText(
+                    f'Ollama models detected: {total_inst} · Indexed folders: {len(knowledge_store.list_folders())} · Local storage: DPAPI encrypted'
+                )
+            else:
+                self.offline_settings_lbl.setText(
+                    f'Indexed folders: {len(knowledge_store.list_folders())} · Click "Refresh Installed" to query local Ollama models.'
+                )
+
+    def _apply_offline_models(self):
+        chat_val = self.ollama_chat_combo.currentText().strip()
+        if chat_val.startswith('(Auto-select'):
+            chat_val = ''
+        vis_val = self.ollama_vision_combo.currentText().strip()
+        if vis_val.startswith('(Auto-select'):
+            vis_val = ''
+        _UI_OLLAMA.preferred_model = chat_val
+        _UI_OLLAMA.preferred_vision_model = vis_val
+        _UI_OLLAMA.save_config()
+        if self.backend_running():
+            self.send_cmd(
+                cmd='offline_config',
+                model=chat_val,
+                vision_model=vis_val,
+                cpu_only=_UI_OLLAMA.cpu_only,
+            )
+        if hasattr(self, 'offline_settings_lbl'):
+            self.offline_settings_lbl.setText(
+                f"Saved Ollama preferences: chat='{chat_val or 'auto'}', vision='{vis_val or 'auto'}'."
+            )
+
+    def _toggle_ollama_cpu_only(self):
+        _UI_OLLAMA.cpu_only = not _UI_OLLAMA.cpu_only
+        _UI_OLLAMA.save_config()
+        self._update_ollama_gpu_btn()
+        if self.backend_running():
+            self.send_cmd(
+                cmd='offline_config',
+                model=_UI_OLLAMA.preferred_model,
+                vision_model=_UI_OLLAMA.preferred_vision_model,
+                cpu_only=_UI_OLLAMA.cpu_only,
+            )
+        if hasattr(self, 'offline_settings_lbl'):
+            self.offline_settings_lbl.setText(
+                'Switched Ollama to CPU-only mode (0 VRAM).' if _UI_OLLAMA.cpu_only
+                else 'Switched Ollama to GPU acceleration with automatic CPU fallback.'
+            )
+
+    def _kb_add_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, 'Select Folder for Local Knowledge Indexing')
+        if not folder:
+            return
+        res = knowledge_store.add_folder(folder)
+        if res.get('ok'):
+            idx_res = knowledge_store.index_folder(folder)
+            msg = idx_res.get('message') or res.get('message', 'Folder added.')
+        else:
+            msg = res.get('message', 'Could not add folder.')
+        self._refresh_offline_settings(probe_ollama=False)
+        if hasattr(self, 'offline_settings_lbl'):
+            self.offline_settings_lbl.setText(msg)
+
+    def _kb_remove_folder(self):
+        item = self.kb_folders_list.currentItem() if hasattr(self, 'kb_folders_list') else None
+        if not item:
+            if hasattr(self, 'offline_settings_lbl'):
+                self.offline_settings_lbl.setText('Select a folder from the list first to remove it.')
+            return
+        res = knowledge_store.remove_folder(item.text())
+        self._refresh_offline_settings(probe_ollama=False)
+        if hasattr(self, 'offline_settings_lbl'):
+            self.offline_settings_lbl.setText(res.get('message', 'Folder removed.'))
+
+    def _kb_reindex_all(self):
+        folders = knowledge_store.list_folders()
+        if not folders:
+            if hasattr(self, 'offline_settings_lbl'):
+                self.offline_settings_lbl.setText('No opt-in folders configured yet. Click "+ Add Folder…" first.')
+            return
+        indexed = 0
+        for f in folders:
+            r = knowledge_store.index_folder(f)
+            if r.get('ok'):
+                indexed += 1
+        if hasattr(self, 'offline_settings_lbl'):
+            self.offline_settings_lbl.setText(f'Re-indexed {indexed}/{len(folders)} local knowledge folder(s).')
 
     def _update_startup_btn_text(self):
         active = is_run_at_startup()

@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from nova_dpapi import dump_protected_json, load_protected_json
 from permissions import permissions
 
 WORKSPACE = Path.home() / "Downloads" / "PC_Workspace"
@@ -32,8 +33,8 @@ def _err(message, **extra):
     return {"ok": False, "verified": False, "message": message, **extra}
 
 
-# Persistent assistant state is stored locally under the user's roaming profile.
-# The JSON file is plain text; users can inspect or delete it themselves.
+# Persistent assistant state is stored locally under the user's roaming profile,
+# protected at rest with Windows DPAPI (legacy plaintext JSON is migrated on next save).
 _STATE_DIR = Path(os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming")) / "PC_Complete_Assistant"
 _STATE_FILE = _STATE_DIR / "assistant_state.json"
 _STATE_LOCK = threading.RLock()
@@ -47,7 +48,7 @@ def _load_assistant_state():
     if not _STATE_FILE.exists():
         return _empty_assistant_state()
     try:
-        state = json.loads(_STATE_FILE.read_text(encoding="utf-8"))
+        state = load_protected_json(_STATE_FILE)
     except Exception as e:
         raise ValueError(f"Saved assistant data could not be read; no changes were made: {e}")
     if not isinstance(state, dict) or not isinstance(state.get("memories"), dict) or not isinstance(state.get("tasks"), list):
@@ -56,17 +57,7 @@ def _load_assistant_state():
 
 
 def _save_assistant_state(state):
-    _STATE_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = _STATE_FILE.with_name(f".{_STATE_FILE.name}.{uuid.uuid4().hex}.tmp")
-    try:
-        with tmp.open("w", encoding="utf-8") as f:
-            json.dump(state, f, ensure_ascii=False, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, _STATE_FILE)
-    finally:
-        if tmp.exists():
-            tmp.unlink()
+    dump_protected_json(_STATE_FILE, state, indent=2)
 
 
 def _local_now():

@@ -131,7 +131,8 @@ class LocalKnowledgeStore:
         if not self.index_file.is_file():
             return self._empty()
         try:
-            data = json.loads(self.index_file.read_text(encoding="utf-8"))
+            from nova_dpapi import load_protected_json
+            data = load_protected_json(self.index_file)
             if isinstance(data, dict) and isinstance(data.get("folders"), list) and isinstance(data.get("chunks"), list):
                 return data
         except Exception:
@@ -139,10 +140,8 @@ class LocalKnowledgeStore:
         return self._empty()
 
     def _save(self) -> None:
-        self.index_file.parent.mkdir(parents=True, exist_ok=True)
-        tmp_file = self.index_file.with_suffix(".json.tmp")
-        tmp_file.write_text(json.dumps(self.state, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.replace(tmp_file, self.index_file)
+        from nova_dpapi import dump_protected_json
+        dump_protected_json(self.index_file, self.state, indent=2)
 
     def list_folders(self) -> List[str]:
         with self._lock:

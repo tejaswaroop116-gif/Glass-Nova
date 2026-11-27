@@ -298,17 +298,17 @@ class PermissionManager:
         if len(self.audit_log) > 200:
             self.audit_log = self.audit_log[-200:]
         try:
-            _AUDIT_FILE.parent.mkdir(parents=True, exist_ok=True)
-            tmp_file = _AUDIT_FILE.with_suffix(".json.tmp")
-            tmp_file.write_text(json.dumps(self.audit_log, indent=2, ensure_ascii=False), encoding="utf-8")
-            os.replace(tmp_file, _AUDIT_FILE)
+            from nova_dpapi import dump_protected_json
+            dump_protected_json(_AUDIT_FILE, self.audit_log, indent=2)
         except Exception:
             pass
 
     def _load_audit(self):
         if _AUDIT_FILE.exists():
             try:
-                self.audit_log = json.loads(_AUDIT_FILE.read_text(encoding="utf-8"))[-200:]
+                from nova_dpapi import load_protected_json
+                data = load_protected_json(_AUDIT_FILE)
+                self.audit_log = data[-200:] if isinstance(data, list) else []
             except Exception:
                 self.audit_log = []
 

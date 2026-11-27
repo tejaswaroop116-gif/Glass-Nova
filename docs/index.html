@@ -622,7 +622,7 @@
             </div>
 
             <div class="disclosure-box">
-              <strong>Honest Privacy Disclosure:</strong> In Online Mode, prompts, voice audio, and triggered screen captures are sent to the Google Gemini API. Local settings, history, and permission states are stored in <code>%LOCALAPPDATA%\GlassNova</code> as plaintext JSON with secret redaction — Windows DPAPI encryption is not yet implemented.
+              <strong>Honest Privacy Disclosure:</strong> In Online Mode, prompts, voice audio, and triggered screen captures are sent to the Google Gemini API. Local memories, tasks, permission audit logs, workflows, Ollama preferences, and knowledge indexes are encrypted at rest with Windows DPAPI (<code>CryptProtectData</code>) scoped to your Windows user account.
             </div>
           </div>
 
@@ -668,10 +668,9 @@
           <article class="editorial-panel reveal">
             <h3>Current Limitations (Active Development)</h3>
             <ul class="check-list" style="margin-top:14px;">
-              <li><strong>Source Install Today:</strong> No signed <code>.exe</code> installer release yet — run via <code>Start_Glass_Nova.bat</code> or build locally with <code>build_exe.py</code>.</li>
-              <li><strong>Settings UI Gaps:</strong> Graphical pickers for Ollama models and Local Knowledge folders are not yet built — configure via <code>.env</code> or chat commands.</li>
-              <li><strong>Local Storage:</strong> Redacted plaintext JSON in <code>%LOCALAPPDATA%\GlassNova</code> (Windows DPAPI encryption is planned).</li>
-              <li><strong>Windows-Only:</strong> Relies on Windows UIAutomation, SAPI TTS, and Win32 APIs.</li>
+              <li><strong>Source &amp; Local Bundle Today:</strong> No signed <code>.exe</code> installer release is hosted yet — run via <code>Start_Glass_Nova.bat</code> or package a portable Windows ZIP locally with <code>python build_exe.py</code>.</li>
+              <li><strong>Windows-Only:</strong> Relies on Windows UIAutomation, SAPI TTS, DPAPI encryption, and Win32 APIs.</li>
+              <li><strong>Optional Local AI Hardware:</strong> Running Ollama models locally requires sufficient RAM/VRAM; CPU-only fallback is available in Settings.</li>
             </ul>
           </article>
         </div>
