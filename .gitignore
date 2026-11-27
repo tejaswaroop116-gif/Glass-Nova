@@ -12,6 +12,11 @@ __pycache__/
 *$py.class
 .hand_dnn_cache/
 
+# PyInstaller build outputs
+build/
+dist/
+*.spec
+
 # Legacy backups & scratch files
 *.bak
 * - Copy.py
