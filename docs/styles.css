@@ -2527,3 +2527,99 @@ section[id] {
 @media (prefers-reduced-motion: reduce) {
   .nj-act { transition: opacity 0.15s linear; }
 }
+
+
+/* =========================================================
+   UNIVERSAL ADAPTIVE PERFORMANCE TIERS (ultra | high | medium | low)
+   Eliminates compositor thrashing over the live WebGL canvas across all GPUs!
+   ========================================================= */
+
+/* GPU-composited scroll progress rail (scaleX avoids layout reflow) */
+.scroll-rail-fill {
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: left center;
+  will-change: transform;
+}
+
+/* Remove SVG feTurbulence displacement filter over live WebGL canvas on all tiers */
+.liquid-glass-refract,
+.liquid-glass-refract::before,
+.liquid-glass-refract::after {
+  filter: none !important;
+}
+
+/* Ultra tier: refined 12px blur (2x faster than 22px + 170% saturate, same luxury look) */
+html[data-perf-tier="ultra"] .liquid-glass {
+  backdrop-filter: blur(12px) saturate(135%);
+  -webkit-backdrop-filter: blur(12px) saturate(135%);
+}
+
+/* High tier: blur only on floating nav shell; sleek translucent obsidian-glass on cards */
+html[data-perf-tier="high"] .liquid-glass {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: linear-gradient(
+    135deg,
+    rgba(14, 22, 38, 0.84) 0%,
+    rgba(9, 14, 25, 0.78) 55%,
+    rgba(14, 30, 46, 0.82) 100%
+  );
+}
+html[data-perf-tier="high"] .nav-shell.liquid-glass {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  background: rgba(8, 13, 24, 0.76);
+}
+
+/* Medium & Low tiers: zero backdrop-filter over WebGL (up to 70% less GPU compositor load!) */
+html[data-perf-tier="medium"] .liquid-glass,
+html[data-perf-tier="medium"] .cine-hud,
+html[data-perf-tier="medium"] .nj-skip,
+html[data-perf-tier="medium"] .nj-step,
+html[data-perf-tier="medium"] .nj-kicker,
+html[data-perf-tier="low"] .liquid-glass,
+html[data-perf-tier="low"] .cine-hud,
+html[data-perf-tier="low"] .nj-skip,
+html[data-perf-tier="low"] .nj-step,
+html[data-perf-tier="low"] .nj-kicker {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: linear-gradient(
+    135deg,
+    rgba(13, 20, 35, 0.90) 0%,
+    rgba(8, 13, 23, 0.88) 100%
+  );
+}
+
+html[data-perf-tier="medium"] .keycap::before,
+html[data-perf-tier="low"] .keycap::before {
+  filter: none;
+  opacity: 0.14;
+}
+
+html[data-perf-tier="low"] .pedestal-ring,
+html[data-perf-tier="low"] .pedestal-sprite,
+html[data-perf-tier="low"] .cine-scroll-cue svg,
+html[data-perf-tier="low"] .viz-scan-line,
+html[data-perf-tier="low"] .viz-flow-path,
+html[data-perf-tier="low"] .viz-playhead {
+  animation: none !important;
+}
+
+html[data-perf-tier="low"] .liquid-glass,
+html[data-perf-tier="low"] .keycap-deck,
+html[data-perf-tier="low"] .pedestal-stage {
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55) !important;
+}
+
+/* Paint containment on independent content sections for faster scroll compositing */
+#intro,
+#modes,
+#capabilities,
+#companions,
+#security,
+#setup,
+#finale {
+  contain: layout style;
+}

@@ -42,14 +42,16 @@
 
   function clamp01(v) { return Math.max(0, Math.min(1, v)); }
 
-  function updateJourneyActs() {
+  function updateJourneyActs(sy) {
     if (!journeySection || !actEls.length) return { inJourney: false, activeLabel: '' };
 
-    var r = journeySection.getBoundingClientRect();
-    var vh = Math.max(1, window.innerHeight);
-    var range = Math.max(1, journeySection.offsetHeight - vh);
-    var inJourney = r.top <= 40 && r.bottom >= vh - 40;
-    var p = clamp01(-r.top / range);
+    var lay = window.__novaPerf ? window.__novaPerf.layout : null;
+    var vh = lay ? lay.vh : Math.max(1, window.innerHeight);
+    var jTop = lay ? lay.journeyTop : journeySection.offsetTop;
+    var jBottom = lay ? (lay.journeyTop + lay.journeyHeight) : (jTop + journeySection.offsetHeight);
+    var range = lay ? lay.journeyRange : Math.max(1, journeySection.offsetHeight - vh);
+    var inJourney = sy >= (jTop - 40) && sy <= (jBottom - vh + 40);
+    var p = clamp01((sy - jTop) / range);
 
     var activeIdx = 0;
     for (var i = 0; i < ACT_RANGES.length; i++) {
@@ -143,11 +145,18 @@
     { id: 'finale',       label: '09 · GLASS NOVA' }
   ];
 
-  function updateHudAndJourney() {
-    var jState = updateJourneyActs();
+  var jBadge = document.querySelector('.nj-badge');
+  var hudRaf = 0;
 
-    var maxScroll = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-    var p = clamp01((window.scrollY || 0) / maxScroll);
+  function flushHudAndJourney() {
+    hudRaf = 0;
+    var sy = window.scrollY || 0;
+    var lay = window.__novaPerf ? window.__novaPerf.layout : null;
+    var vh = lay ? lay.vh : Math.max(1, window.innerHeight);
+    var maxScroll = lay ? lay.maxScroll : Math.max(1, document.documentElement.scrollHeight - vh);
+    var jState = updateJourneyActs(sy);
+
+    var p = clamp01(sy / maxScroll);
     var pct = Math.round(p * 100);
 
     if (hudFill) hudFill.style.width = (p * 100).toFixed(2) + '%';
@@ -157,15 +166,15 @@
     if (jState.inJourney && jState.activeLabel) {
       activeLabel = jState.activeLabel;
     } else {
-      var offset = (window.scrollY || 0) + window.innerHeight * 0.36;
+      var offset = sy + vh * 0.36;
+      var secs = lay ? lay.sections : {};
       for (var i = 0; i < chapters.length; i++) {
-        var el = document.getElementById(chapters[i].id);
-        if (el && el.offsetTop <= offset) activeLabel = chapters[i].label;
+        var s = secs[chapters[i].id];
+        if (s && s.top <= offset) activeLabel = chapters[i].label;
       }
     }
     if (hudChapter) hudChapter.textContent = activeLabel;
 
-    var jBadge = document.querySelector('.nj-badge');
     if (jBadge && jState.inJourney && jState.activeLabel) {
       jBadge.textContent = jState.activeLabel + ' · ' + String(pct).padStart(3, '0') + '%';
     } else if (jBadge) {
@@ -176,13 +185,17 @@
       hudEl.classList.toggle('is-hidden', !!window.__novaRoadmapActive || !!jState.inJourney);
     }
     if (scrollCue) {
-      scrollCue.classList.toggle('is-hidden', (window.scrollY || 0) > 120);
+      scrollCue.classList.toggle('is-hidden', sy > 120);
     }
   }
 
-  window.addEventListener('scroll', updateHudAndJourney, { passive: true });
-  window.addEventListener('resize', updateHudAndJourney, { passive: true });
-  updateHudAndJourney();
+  function scheduleHudUpdate() {
+    if (!hudRaf) hudRaf = requestAnimationFrame(flushHudAndJourney);
+  }
+
+  window.addEventListener('scroll', scheduleHudUpdate, { passive: true });
+  window.addEventListener('resize', scheduleHudUpdate, { passive: true });
+  scheduleHudUpdate();
 
   // 4. Accessible Kinetic Word-Split Utility
   function splitIntoWords(el) {

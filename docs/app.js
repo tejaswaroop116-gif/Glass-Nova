@@ -3,29 +3,36 @@
   var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var isCoarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
 
-  // 1. Scroll progress rail & active navigation link
+  // 1. Scroll progress rail & active navigation link (rAF-coalesced, zero-reflow via layout cache)
   var railFill = document.getElementById('scroll-rail-fill');
   var navLinks = Array.prototype.slice.call(document.querySelectorAll('.nav-links a[href^="#"]'));
-  var sections = navLinks.map(function (a) {
-    return document.getElementById(a.getAttribute('href').slice(1));
-  }).filter(Boolean);
+  var navIds = navLinks.map(function (a) { return a.getAttribute('href').slice(1); });
+  var scrollRaf = 0;
 
-  function onScroll() {
-    var maxScroll = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-    var pct = Math.min(100, Math.max(0, (window.scrollY / maxScroll) * 100));
-    if (railFill) railFill.style.width = pct.toFixed(2) + '%';
+  function flushScroll() {
+    scrollRaf = 0;
+    var sy = window.scrollY || 0;
+    var lay = window.__novaPerf ? window.__novaPerf.layout : null;
+    var maxScroll = lay ? lay.maxScroll : Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+    var vh = lay ? lay.vh : window.innerHeight;
+    var pct = Math.min(100, Math.max(0, (sy / maxScroll) * 100));
+    if (railFill) railFill.style.transform = 'scaleX(' + (pct / 100).toFixed(4) + ')';
 
     var currentId = '';
-    var offset = window.scrollY + window.innerHeight * 0.34;
-    sections.forEach(function (sec) {
-      if (sec.offsetTop <= offset) currentId = sec.id;
-    });
+    var offset = sy + vh * 0.34;
+    var secs = lay ? lay.sections : {};
+    for (var i = 0; i < navIds.length; i++) {
+      var s = secs[navIds[i]];
+      if (s && s.top <= offset) currentId = navIds[i];
+    }
     navLinks.forEach(function (a) {
       a.classList.toggle('active', a.getAttribute('href') === '#' + currentId);
     });
   }
-  window.addEventListener('scroll', onScroll, { passive: true });
-  onScroll();
+  window.addEventListener('scroll', function () {
+    if (!scrollRaf) scrollRaf = requestAnimationFrame(flushScroll);
+  }, { passive: true });
+  flushScroll();
 
   // 2. Responsive navigation menu toggle
   var menuBtn = document.getElementById('menu-toggle');
@@ -43,8 +50,9 @@
     });
   }
 
-  // 3. Liquid Glass specular cursor tracking + 3D spatial tilt stages
-  if (!reduceMotion && !isCoarse) {
+  // 3. Liquid Glass specular cursor tracking + 3D spatial tilt stages (high/ultra desktop tiers only)
+  var perfTier = window.__novaPerf ? window.__novaPerf.tier : 'medium';
+  if (!reduceMotion && !isCoarse && (perfTier === 'high' || perfTier === 'ultra')) {
     document.querySelectorAll('.liquid-glass').forEach(function (el) {
       el.addEventListener('pointermove', function (e) {
         var r = el.getBoundingClientRect();

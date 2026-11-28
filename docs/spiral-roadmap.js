@@ -8,6 +8,7 @@ if (!journey || !sticky || !container) {
   // Roadmap section not present on page
 } else {
   const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const perfCfg = window.__novaPerf ? window.__novaPerf.getConfig() : null;
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#03050a');
   scene.fog = new THREE.FogExp2(0x03050a, 0.018);
@@ -19,8 +20,12 @@ if (!journey || !sticky || !container) {
 
   let { w: stageW, h: stageH } = getSize();
   const camera = new THREE.PerspectiveCamera(48, stageW / stageH, 0.1, 500);
-  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, window.innerWidth < 700 ? 1.25 : 1.5));
+  const renderer = new THREE.WebGLRenderer({
+    antialias: perfCfg ? !!perfCfg.antialias : window.innerWidth >= 900,
+    powerPreference: perfCfg && perfCfg.tier === 'low' ? 'low-power' : 'high-performance'
+  });
+  const maxRoadmapDpr = perfCfg ? perfCfg.maxDpr : (window.innerWidth < 700 ? 1.1 : 1.25);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxRoadmapDpr));
   renderer.setSize(stageW, stageH);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.15;
@@ -32,8 +37,8 @@ if (!journey || !sticky || !container) {
   const fill = new THREE.PointLight(0x7054ff, 85, 130);
   scene.add(fill);
 
-  // Starfield (adaptive density on mobile)
-  const starCount = window.innerWidth < 700 ? 700 : 1400;
+  // Starfield (adaptive density by performance tier)
+  const starCount = perfCfg ? perfCfg.roadmapStarCount : (window.innerWidth < 700 ? 500 : 1000);
   const starGeo = new THREE.BufferGeometry();
   const starPos = [];
   for (let i = 0; i < starCount; i++) {
@@ -61,12 +66,13 @@ if (!journey || !sticky || !container) {
     const a = t * Math.PI * 2 * turns;
     curvePoints.push(new THREE.Vector3(Math.cos(a) * radius, t * height - height / 2, Math.sin(a) * radius));
   }
+  const tubeSegs = perfCfg ? perfCfg.roadmapTubeSegs : 320;
   const curve = new THREE.CatmullRomCurve3(curvePoints);
-  const trackBase = new THREE.Mesh(new THREE.TubeGeometry(curve, 480, 0.055, 8, false), new THREE.MeshBasicMaterial({ color: 0x16415b, transparent: true, opacity: 0.42, toneMapped: false }));
+  const trackBase = new THREE.Mesh(new THREE.TubeGeometry(curve, tubeSegs, 0.055, 6, false), new THREE.MeshBasicMaterial({ color: 0x16415b, transparent: true, opacity: 0.42, toneMapped: false }));
   scene.add(trackBase);
-  const trackGlow = new THREE.Mesh(new THREE.TubeGeometry(curve, 480, 0.035, 6, false), new THREE.MeshBasicMaterial({ color: 0x35baff, transparent: true, opacity: 0.62, toneMapped: false }));
+  const trackGlow = new THREE.Mesh(new THREE.TubeGeometry(curve, tubeSegs, 0.035, 5, false), new THREE.MeshBasicMaterial({ color: 0x35baff, transparent: true, opacity: 0.62, toneMapped: false }));
   scene.add(trackGlow);
-  const trackCore = new THREE.Mesh(new THREE.TubeGeometry(curve, 480, 0.012, 5, false), new THREE.MeshBasicMaterial({ color: 0xc2f5ff, transparent: true, opacity: 0.65, toneMapped: false }));
+  const trackCore = new THREE.Mesh(new THREE.TubeGeometry(curve, Math.floor(tubeSegs * 0.75), 0.012, 4, false), new THREE.MeshBasicMaterial({ color: 0xc2f5ff, transparent: true, opacity: 0.65, toneMapped: false }));
   scene.add(trackCore);
 
   // Permanent central metallic pole
@@ -100,8 +106,8 @@ if (!journey || !sticky || !container) {
     const g = new THREE.Group();
     g.position.copy(curve.getPoint(t));
 
-    const isHiRes = window.innerWidth >= 700;
-    const tw = isHiRes ? 1024 : 512, th = isHiRes ? 512 : 256, ts = isHiRes ? 2 : 1;
+    const texW = perfCfg ? perfCfg.roadmapTexSize : (window.innerWidth >= 700 ? 512 : 256);
+    const tw = texW, th = Math.floor(texW / 2), ts = texW / 512;
     const canvas = document.createElement('canvas');
     canvas.width = tw;
     canvas.height = th;
