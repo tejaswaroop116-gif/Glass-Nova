@@ -1969,8 +1969,8 @@ body.roadmap-active .nav-shell {
   right: 26px;
   bottom: 24px;
   z-index: 45;
-  width: 210px;
-  padding: 10px 12px 11px;
+  width: 242px;
+  padding: 10px 14px 11px;
   pointer-events: none;
   background: rgba(6, 10, 18, 0.56);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -2397,10 +2397,13 @@ section[id] {
 .nj-act {
   position: absolute;
   max-width: min(680px, calc(100% - 48px));
+  padding: 22px 28px;
+  border-radius: 24px;
+  background: radial-gradient(ellipse 85% 75% at 50% 50%, rgba(4, 6, 12, 0.62) 0%, rgba(4, 6, 12, 0.0) 82%);
   opacity: 0;
   will-change: transform, opacity;
   pointer-events: none;
-  text-shadow: 0 12px 42px rgba(0, 0, 0, 0.85);
+  text-shadow: 0 10px 36px rgba(0, 0, 0, 0.9);
 }
 .nj-pos-center {
   text-align: center;
@@ -2446,6 +2449,7 @@ section[id] {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.72));
 }
 .nj-sub {
   margin: 0;

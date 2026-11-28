@@ -165,8 +165,15 @@
     }
     if (hudChapter) hudChapter.textContent = activeLabel;
 
+    var jBadge = document.querySelector('.nj-badge');
+    if (jBadge && jState.inJourney && jState.activeLabel) {
+      jBadge.textContent = jState.activeLabel + ' · ' + String(pct).padStart(3, '0') + '%';
+    } else if (jBadge) {
+      jBadge.textContent = '3D FLIGHT · SCROLL TO TRAVEL';
+    }
+
     if (hudEl) {
-      hudEl.classList.toggle('is-hidden', !!window.__novaRoadmapActive);
+      hudEl.classList.toggle('is-hidden', !!window.__novaRoadmapActive || !!jState.inJourney);
     }
     if (scrollCue) {
       scrollCue.classList.toggle('is-hidden', (window.scrollY || 0) > 120);
