@@ -10,7 +10,11 @@ from PySide6.QtWidgets import QWidget
 
 from bot import cl, lgrad, rgrad, st
 
-ROOT = Path(__file__).resolve().parent
+ROOT = (
+    Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent
+)
 APP_NAME = "Nova"
 BOT_NAMES = {
     "mechanical": "Original NOVA Robot",
@@ -277,8 +281,11 @@ def set_run_at_startup(enable: bool) -> bool:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_ALL_ACCESS) as key:
             if enable:
                 exe_path = sys.executable
-                script_path = str(ROOT / "ui.py")
-                cmd = f'"{exe_path}" "{script_path}"'
+                if getattr(sys, "frozen", False):
+                    cmd = f'"{exe_path}"'
+                else:
+                    script_path = str(ROOT / "ui.py")
+                    cmd = f'"{exe_path}" "{script_path}"'
                 winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, cmd)
             else:
                 try:

@@ -45,10 +45,21 @@ HIDDEN_IMPORTS = [
     "nova_screen_pointing",
     "nova_walkthrough",
     "nova_workflows",
+    "nova_updater",
+    "pc_assistant",
     "comtypes",
     "comtypes.client",
     "win32com",
     "win32com.client",
+]
+
+EXCLUDE_MODULES = [
+    "pytest",
+    "tkinter",
+    "matplotlib",
+    "IPython",
+    "jupyter",
+    "notebook",
 ]
 
 
@@ -82,6 +93,8 @@ def build_command() -> list[str]:
         cmd.extend(["--add-data", entry])
     for mod in HIDDEN_IMPORTS:
         cmd.extend(["--hidden-import", mod])
+    for excl in EXCLUDE_MODULES:
+        cmd.extend(["--exclude-module", excl])
     cmd.append(str(ROOT / "ui.py"))
     return cmd
 

@@ -20,6 +20,10 @@ from nova_workflows import (
     Workflow, WorkflowStep, WorkflowRecorder, WorkflowStore, WorkflowPlayer,
     list_workflow_templates, instantiate_template, WorkflowDebugger,
 )
+from nova_updater import (
+    APP_VERSION, RELEASES_PAGE_URL, UpdateCheckResult,
+    check_for_updates, is_trusted_release_url, open_trusted_release_url,
+)
 
 from bot import DesktopBot, STATES, cl, ease, glow, gold, hl, lgrad, onyx, pearl, rgrad, st
 from ui_dialogs import (
@@ -582,7 +586,35 @@ class Nova(QMainWindow):
         sec_v.addWidget(self.revoke_btn)
         pv.addWidget(sec_box)
 
-        info = QLabel('API key: .env file\nVoice engine: Gemini Live backend\nTheme: Glass Futuristic'); info.setObjectName('muted'); pv.addWidget(info)
+        # Software Updates section (read-only official GitHub Releases check)
+        upd_box, upd_v = self.panel(
+            'Software Updates',
+            'Checks official Glass-Nova GitHub Releases. Never downloads or installs automatically.',
+        )
+        self._latest_update_url = RELEASES_PAGE_URL
+        self.update_version_lbl = QLabel(f'Installed Version: v{APP_VERSION.lstrip("vV")}')
+        self.update_version_lbl.setStyleSheet('font-weight: 600; color: #a5f1ff;')
+        upd_v.addWidget(self.update_version_lbl)
+
+        self.update_status_lbl = QLabel('Click "Check for Updates" to check GitHub Releases.')
+        self.update_status_lbl.setObjectName('muted')
+        self.update_status_lbl.setWordWrap(True)
+        upd_v.addWidget(self.update_status_lbl)
+
+        upd_btns = QHBoxLayout(); upd_btns.setSpacing(8)
+        self.update_check_btn = self.button('↻  Check for Updates', self._ui_check_for_updates)
+        self.update_open_btn = self.button('↗  Open Release / Download', self._ui_open_release_page)
+        upd_btns.addWidget(self.update_check_btn)
+        upd_btns.addWidget(self.update_open_btn)
+        upd_v.addLayout(upd_btns)
+
+        self.update_notes_box = self.textbox('Release notes will appear here after checking for updates.')
+        self.update_notes_box.setMinimumHeight(76)
+        self.update_notes_box.setMaximumHeight(130)
+        upd_v.addWidget(self.update_notes_box)
+        pv.addWidget(upd_box)
+
+        info = QLabel(f'Version: v{APP_VERSION.lstrip("vV")}\nAPI key: %APPDATA%\\PC_Complete_Assistant\\.env or local .env\nVoice engine: Gemini Live & Offline Local Mode'); info.setObjectName('muted'); pv.addWidget(info)
         self.log = self.textbox('Backend logs…')
         self.log.setMinimumHeight(110)
         pv.addWidget(self.log, 1)
@@ -1119,10 +1151,15 @@ class Nova(QMainWindow):
     MARK = '@@NOVA@@'
     def backend_running(self): return self.process.state() != QProcess.NotRunning
     def ensure_backend(self):
-        """Start the single backend process if it is not running (supports both Gemini Live and Offline Local Mode)."""
+        """Start the single backend process if it is not running (supports both dev Python and packaged GlassNova.exe)."""
         if self.backend_running(): return True
         self._out_raw = self._err_raw = b''; self._stopping = self._fatal_shown = False; self.backend_state = 'connecting'
-        self.process.setProgram(sys.executable); self.process.setArguments(['-u', str(ROOT / 'pc_assistant.py')]); self.process.start()
+        self.process.setProgram(sys.executable)
+        if getattr(sys, 'frozen', False):
+            self.process.setArguments(['--backend'])
+        else:
+            self.process.setArguments(['-u', str(ROOT / 'pc_assistant.py')])
+        self.process.start()
         self._refresh_status(); self.set_orb_state('thinking'); self.append_log('Starting assistant…')
         return True
     def send_cmd(self, **cmd):
@@ -1809,6 +1846,62 @@ class Nova(QMainWindow):
             if ans == QMessageBox.Yes and self.ensure_backend():
                 self.send_cmd(cmd='workflow_cmd', action='replay', workflow_id=wf.get('workflow_id'))
 
+    # -- Safe In-App Update Checker (background thread, never auto-executes)
+    def _ui_check_for_updates(self):
+        if getattr(self, '_update_worker', None) is not None and self._update_worker.isRunning():
+            return
+        self.update_check_btn.setEnabled(False)
+        self.update_status_lbl.setStyleSheet('color: #a5f1ff;')
+        self.update_status_lbl.setText('Checking official Glass-Nova GitHub Releases…')
+
+        class _UpdateWorker(QThread):
+            finished_result = Signal(object)
+
+            def run(self):
+                self.finished_result.emit(check_for_updates(APP_VERSION))
+
+        self._update_worker = _UpdateWorker(self)
+        self._update_worker.finished_result.connect(self._apply_update_check_result)
+        self._update_worker.start()
+
+    def _apply_update_check_result(self, result: UpdateCheckResult):
+        self.update_check_btn.setEnabled(True)
+        safe_url = result.release_url if is_trusted_release_url(result.release_url) else RELEASES_PAGE_URL
+        self._latest_update_url = safe_url
+
+        if result.status == 'update_available':
+            self.update_status_lbl.setStyleSheet('color: #5efaff; font-weight: 700;')
+            self.update_status_lbl.setText(f'✦ Update available: {result.latest_version} (installed: v{result.current_version.lstrip("vV")})')
+            self.update_open_btn.setText(f'↗  Download {result.latest_version}')
+        elif result.status == 'up_to_date':
+            self.update_status_lbl.setStyleSheet('color: #6ee7b7; font-weight: 600;')
+            self.update_status_lbl.setText(result.message)
+            self.update_open_btn.setText('↗  Open Releases Page')
+        elif result.status == 'offline':
+            self.update_status_lbl.setStyleSheet('color: #fbbf24;')
+            self.update_status_lbl.setText(result.message)
+        elif result.status == 'rate_limited':
+            self.update_status_lbl.setStyleSheet('color: #fbbf24;')
+            self.update_status_lbl.setText(result.message)
+        else:
+            self.update_status_lbl.setStyleSheet('color: #fda4af;')
+            self.update_status_lbl.setText(result.message or 'Update check failed.')
+
+        if result.release_notes:
+            header = f"{result.release_name or result.latest_version}\n" + ("─" * 32) + "\n"
+            self.update_notes_box.setPlainText(header + result.release_notes)
+
+    def _ui_open_release_page(self):
+        target = self._latest_update_url if is_trusted_release_url(self._latest_update_url) else RELEASES_PAGE_URL
+        ans = QMessageBox.question(
+            self,
+            'Open Official GitHub Release',
+            f'Open the official Glass Nova release page in your browser?\n\n{target}\n\nGlass Nova will never download or run installers automatically.',
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if ans == QMessageBox.Yes:
+            open_trusted_release_url(target)
+
     def _on_workflow_step_request(self, ev: dict):
         req_id = ev.get('id')
         step_idx = int(ev.get('step', 1))
@@ -1846,6 +1939,11 @@ class Nova(QMainWindow):
 
 
 def main():
+    if '--backend' in sys.argv:
+        import asyncio
+        import pc_assistant
+        asyncio.run(pc_assistant.amain())
+        return
     app = QApplication(sys.argv); app.setApplicationName(APP_NAME); app.setQuitOnLastWindowClosed(False); app.setStyle('Fusion')
     guard = SingleInstanceGuard()
     win_holder = {}

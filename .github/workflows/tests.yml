@@ -43,6 +43,7 @@ jobs:
         run: |
           python -B test_nus_feature_pack.py -v
           python -B test_workflows_milestone.py -v
+          python -B test_installer_and_updater.py -v
 
       - name: Run Glass Nova integration tests
         env:

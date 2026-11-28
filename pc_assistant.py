@@ -67,13 +67,26 @@ from nova_local_knowledge import knowledge_store, local_knowledge_control, run_s
 from nova_offline_agent import OfflineAgent
 from nova_voice_control import VOICE_CONTROL_PHRASES, VoiceControlState, match_voice_control_command
 
-HERE = Path(__file__).resolve().parent
-WORKFLOWS_DIR = Path(os.environ.get("APPDATA") or Path.home()) / "PC_Complete_Assistant" / "workflows"
+HERE = (
+    Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent
+)
+USER_DATA_DIR = Path(os.environ.get("APPDATA") or Path.home()) / "PC_Complete_Assistant"
+WORKFLOWS_DIR = USER_DATA_DIR / "workflows"
 workflow_recorder = WorkflowRecorder(allowed_actions=ALLOWLISTED_WORKFLOW_ACTIONS)
 workflow_store = WorkflowStore(WORKFLOWS_DIR)
 _active_walkthrough: Walkthrough | None = None
 _active_workflow_player: WorkflowPlayer | None = None
-load_dotenv(HERE / ".env")
+
+
+def _load_nova_dotenv() -> None:
+    """Load user-scoped %APPDATA% .env first (preserved across upgrades), then app-local .env as fallback."""
+    load_dotenv(USER_DATA_DIR / ".env", override=False)
+    load_dotenv(HERE / ".env", override=False)
+
+
+_load_nova_dotenv()
 API_KEY = os.getenv("GEMINI_API_KEY")
 DEFAULT_LIVE_MODEL = "gemini-2.5-flash-native-audio-preview"
 LIVE_MODEL_FALLBACKS = (
@@ -2466,7 +2479,7 @@ def _stdin_reader(loop, cmd_q):
 async def amain():
     global MODEL, _ipc_loop_running
     _ipc_loop_running = True
-    load_dotenv(HERE / ".env")
+    _load_nova_dotenv()
     key = (os.getenv("GEMINI_API_KEY") or "").strip()
     MODEL = (os.getenv("MODEL") or DEFAULT_LIVE_MODEL).strip()
     client = genai.Client(api_key=key) if key else None

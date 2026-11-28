@@ -15,6 +15,7 @@ TOP_FOLDER = "GlassNova"
 
 EXCLUDE_PY_NAMES = {
     "build_exe.py",
+    "build_installer.py",
     "build_release_zip.py",
 }
 
