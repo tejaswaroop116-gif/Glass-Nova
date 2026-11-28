@@ -33,6 +33,8 @@
     "operatingSystem": "Windows 10, Windows 11",
     "url": "https://tejaswaroop30.github.io/Glass-Nova/",
     "codeRepository": "https://github.com/tejaswaroop30/Glass-Nova",
+    "softwareVersion": "1.0.0-beta",
+    "downloadUrl": "https://github.com/tejaswaroop30/Glass-Nova/releases/download/v1.0.0-beta/GlassNova-Windows-Source-Launcher.zip",
     "description": "Open-source Python and PySide6 AI desktop assistant for Windows 10/11 supporting Online Gemini Live, Offline Ollama and Vosk voice, Hybrid mode, fail-closed permissions, and 4 animated desktop companions.",
     "softwareRequirements": "Python 3.11-3.12 on Windows 10/11; optional GEMINI_API_KEY for online mode and optional Ollama for local AI models.",
     "isAccessibleForFree": true
@@ -149,8 +151,8 @@
       </nav>
 
       <div class="nav-actions">
-        <a class="btn btn-glass btn-sm" href="#setup">Run Local</a>
-        <a class="btn btn-primary btn-sm" href="https://github.com/tejaswaroop30/Glass-Nova" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a class="btn btn-glass btn-sm" href="https://github.com/tejaswaroop30/Glass-Nova" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a class="btn btn-primary btn-sm" href="https://github.com/tejaswaroop30/Glass-Nova/releases/download/v1.0.0-beta/GlassNova-Windows-Source-Launcher.zip">Download</a>
         <button class="mobile-menu-btn" type="button" id="menu-toggle" aria-expanded="false" aria-controls="primary-nav">Menu</button>
       </div>
     </div>
@@ -166,7 +168,7 @@
           <div>
             <div class="status-pill liquid-glass">
               <span class="status-dot" aria-hidden="true"></span>
-              <span>Open-Source &bull; Windows 10/11 &bull; Active Development</span>
+              <span>v1.0.0-beta Live &bull; Open-Source &bull; Windows 10/11</span>
             </div>
 
             <h1>
@@ -179,8 +181,8 @@
             </p>
 
             <div class="hero-cta">
-              <a class="btn btn-primary" href="https://github.com/tejaswaroop30/Glass-Nova" target="_blank" rel="noopener noreferrer">View on GitHub</a>
-              <a class="btn btn-glass" href="#setup">Install Guide</a>
+              <a class="btn btn-primary" href="https://github.com/tejaswaroop30/Glass-Nova/releases/download/v1.0.0-beta/GlassNova-Windows-Source-Launcher.zip">Download v1.0.0-beta (ZIP)</a>
+              <a class="btn btn-glass" href="https://github.com/tejaswaroop30/Glass-Nova/releases/tag/v1.0.0-beta" target="_blank" rel="noopener noreferrer">Release Notes</a>
             </div>
 
             <div class="hero-metrics">
@@ -649,9 +651,9 @@
     <section class="scene scene-divider" id="setup">
       <div class="container">
         <div class="scene-intro reveal">
-          <div class="scene-kicker"><span class="idx">07</span> Setup &amp; Status</div>
-          <h2>Honest requirements, transparent status, open source on GitHub.</h2>
-          <p><code>Start_Glass_Nova.bat</code> sets up the virtual environment and installs missing dependencies only when needed — subsequent launches start fast, even offline.</p>
+          <div class="scene-kicker"><span class="idx">07</span> Download &amp; Setup</div>
+          <h2>Download v1.0.0-beta or run from source on GitHub.</h2>
+          <p>Download the beginner-friendly Windows ZIP (no Git required), extract it, and double-click <code>Start_Glass_Nova.bat</code>. The first online launch installs dependencies into an isolated <code>.venv</code> and caches the ~40 MB Vosk offline voice model — subsequent launches start fast, even offline.</p>
         </div>
 
         <div class="status-grid">
@@ -666,9 +668,9 @@
           </article>
 
           <article class="editorial-panel reveal">
-            <h3>Current Limitations (Active Development)</h3>
+            <h3>Current Status &amp; Limitations</h3>
             <ul class="check-list" style="margin-top:14px;">
-              <li><strong>Source &amp; Local Bundle Today:</strong> No signed <code>.exe</code> installer release is hosted yet — run via <code>Start_Glass_Nova.bat</code> or package a portable Windows ZIP locally with <code>python build_exe.py</code>.</li>
+              <li><strong>Published Beta Release (<code>v1.0.0-beta</code>):</strong> Distributed as a Windows Source + One-Click Launcher ZIP using official signed Python (avoiding Windows 11 Smart App Control blocks on unsigned <code>.exe</code> files).</li>
               <li><strong>Windows-Only:</strong> Relies on Windows UIAutomation, SAPI TTS, DPAPI encryption, and Win32 APIs.</li>
               <li><strong>Optional Local AI Hardware:</strong> Running Ollama models locally requires sufficient RAM/VRAM; CPU-only fallback is available in Settings.</li>
             </ul>
@@ -677,7 +679,7 @@
 
         <div class="terminal-card reveal">
           <div class="terminal-head">
-            <span>PowerShell &mdash; Clone &amp; Launch Glass Nova</span>
+            <span>PowerShell &mdash; Or Clone &amp; Launch from Source</span>
             <button class="btn btn-glass btn-sm" type="button" id="copy-install">Copy Commands</button>
           </div>
           <pre id="install-code"><code># 1. Clone the repository
@@ -693,8 +695,9 @@ ollama pull moondream</code></pre>
         </div>
 
         <div class="hero-cta" style="margin-top:26px;">
-          <a class="btn btn-primary" href="https://github.com/tejaswaroop30/Glass-Nova" target="_blank" rel="noopener noreferrer">Open GitHub Repository</a>
-          <a class="btn btn-glass" href="https://github.com/tejaswaroop30/Glass-Nova/blob/main/README.md" target="_blank" rel="noopener noreferrer">Read Full README</a>
+          <a class="btn btn-primary" href="https://github.com/tejaswaroop30/Glass-Nova/releases/download/v1.0.0-beta/GlassNova-Windows-Source-Launcher.zip">Download v1.0.0-beta ZIP</a>
+          <a class="btn btn-glass" href="https://github.com/tejaswaroop30/Glass-Nova/releases/tag/v1.0.0-beta" target="_blank" rel="noopener noreferrer">View Release Page</a>
+          <a class="btn btn-glass" href="https://github.com/tejaswaroop30/Glass-Nova" target="_blank" rel="noopener noreferrer">GitHub Repository</a>
           <a class="btn btn-glass" href="https://github.com/tejaswaroop30/Glass-Nova/issues" target="_blank" rel="noopener noreferrer">Open Issues</a>
         </div>
       </div>
@@ -707,6 +710,7 @@ ollama pull moondream</code></pre>
         <strong style="color:var(--text);">Glass Nova</strong> &mdash; Open-source Windows AI desktop assistant. Python · PySide6 · Gemini Live · Vosk · Windows SAPI · Ollama.
       </div>
       <div class="footer-links">
+        <a href="https://github.com/tejaswaroop30/Glass-Nova/releases/tag/v1.0.0-beta" target="_blank" rel="noopener noreferrer">v1.0.0-beta Release</a>
         <a href="https://github.com/tejaswaroop30/Glass-Nova" target="_blank" rel="noopener noreferrer">GitHub</a>
         <a href="https://github.com/tejaswaroop30/Glass-Nova/blob/main/README.md" target="_blank" rel="noopener noreferrer">README</a>
         <a href="https://github.com/tejaswaroop30/Glass-Nova/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">Contributing</a>

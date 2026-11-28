@@ -9,6 +9,8 @@
 
 > **Website:** https://tejaswaroop30.github.io/Glass-Nova/
 > **Repository:** https://github.com/tejaswaroop30/Glass-Nova
+> **Latest Release (`v1.0.0-beta`):** https://github.com/tejaswaroop30/Glass-Nova/releases/tag/v1.0.0-beta
+> **Direct Windows Download:** [GlassNova-Windows-Source-Launcher.zip](https://github.com/tejaswaroop30/Glass-Nova/releases/download/v1.0.0-beta/GlassNova-Windows-Source-Launcher.zip)
 
 ---
 
@@ -91,7 +93,14 @@ Glass Nova runs as a two-process desktop architecture: a frameless PySide6 glass
 
 ## Installation & Quick Start
 
-### Option 1: One-Click Setup & Launch (Windows)
+### Option 1: Beginner Download — `v1.0.0-beta` ZIP (No Git Required, Recommended)
+1. Download **[GlassNova-Windows-Source-Launcher.zip](https://github.com/tejaswaroop30/Glass-Nova/releases/download/v1.0.0-beta/GlassNova-Windows-Source-Launcher.zip)** from the [v1.0.0-beta Release](https://github.com/tejaswaroop30/Glass-Nova/releases/tag/v1.0.0-beta).
+2. Right-click the ZIP → **Extract All…** into a normal folder (e.g., `Desktop\GlassNova`).
+3. Open the `GlassNova` folder and double-click **`Start_Glass_Nova.bat`** (see `INSTALL.txt` inside the ZIP for step-by-step help).
+   - Uses official Python (signed by the Python Software Foundation) instead of an unsigned `.exe`, avoiding Windows 11 Smart App Control blocks.
+   - First online launch sets up `.venv`, installs dependencies, and caches the ~40 MB Vosk offline voice model. Subsequent launches start in seconds, even offline.
+
+### Option 2: Clone from GitHub & One-Click Launch
 1. Clone the repository:
    ```powershell
    git clone https://github.com/tejaswaroop30/Glass-Nova.git
@@ -99,7 +108,7 @@ Glass Nova runs as a two-process desktop architecture: a frameless PySide6 glass
    ```
 2. Double-click **`Start_Glass_Nova.bat`** (automatically creates `.venv`, installs dependencies from `requirements.txt`, copies `.env.example` to `.env`, and launches `ui.py`).
 
-### Option 2: Manual Setup (PowerShell)
+### Option 3: Manual Setup (PowerShell)
 ```powershell
 git clone https://github.com/tejaswaroop30/Glass-Nova.git
 cd Glass-Nova
@@ -125,8 +134,8 @@ Outputs a bundled application to `dist\GlassNova\GlassNova.exe`.
 2. Add your Google Gemini API key:
    ```env
    GEMINI_API_KEY=your_gemini_api_key_here
-   MODEL=gemini-3.8-live
-   VISION_MODEL=gemini-3.5-flash-lite
+   MODEL=gemini-2.5-flash-native-audio-preview
+   VISION_MODEL=gemini-2.5-flash
    ```
 3. Restart Glass Nova. If `GEMINI_API_KEY` is blank or unreachable, Glass Nova starts automatically in **Offline Local Mode**.
 
@@ -163,7 +172,7 @@ Glass Nova is designed around **fail-closed permission enforcement**:
 - **Fail-Closed by Default**: If no permission prompt handler is active or a permission cannot be verified, protected tools deny the action instead of silently allowing it.
 - **Always-Prompt Sensitive Categories**: `file_delete`, `form_purchase`, and `continuous_screen` always require explicit user confirmation.
 - **Allow-Listed Action Broker**: Live actions pass through `validate_proposed_action()` and `ApprovedActionBroker`, blocking unlisted tools, shell metacharacters, dangerous system commands, and unsafe URL schemes (`javascript:`, `file:///`).
-- **Local Privacy**: Local tasks, memories, and permission audit logs are stored as plain JSON files under `%APPDATA%\PC_Complete_Assistant\`. Workflow recording strips secrets and rejects raw keystrokes.
+- **Local Privacy**: Local tasks, memories, permission audit logs, saved workflows, Ollama preferences, and knowledge indexes are encrypted at rest with Windows DPAPI (`nova_dpapi.py`, `CryptProtectData`) under your Windows user account. Workflow recording strips secrets and rejects raw keystrokes.
 
 ---
 
@@ -213,18 +222,18 @@ No. Glass Nova is built specifically for Windows 10/11 and relies on native Win3
 ## Current Limitations
 
 - **Windows-only**: Not cross-platform for macOS or Linux.
-- **Offline voice vocabulary**: Offline voice recognition uses a fixed Vosk phrase grammar; open-ended Q&A and vision tasks require an online Gemini API key.
-- **Executable packaging**: `build_exe.py` is included for PyInstaller builds, but signed installers / auto-updaters are not yet provided.
-- **Large modules**: `pc_assistant.py` (~2,030 lines) and `desktop_agent.py` (~1,465 lines) still contain core orchestration loops that can be further modularized over time.
+- **Beta Release Format**: `v1.0.0-beta` is published as a beginner-friendly Windows Source + One-Click Launcher ZIP (requires Python 3.11/3.12 once) to avoid Windows 11 Smart App Control blocks on unsigned `.exe` binaries; signed `.exe` installers / auto-updaters are not yet provided.
+- **Offline AI Hardware**: Instant 0 ms offline commands and SAPI speech run on any Windows PC, while optional local Ollama chat/vision requires sufficient RAM/VRAM (CPU-only fallback is available in Settings).
+- **Large modules**: `pc_assistant.py` and `desktop_agent.py` still contain core orchestration loops that can be further modularized over time.
 
 ---
 
 ## Roadmap
 
-- [ ] Signed Windows installer / portable release artifact via GitHub Releases.
-- [ ] Optional local LLM backend (e.g., Ollama) for open-ended offline Q&A.
+- [x] Beginner-friendly Windows `v1.0.0-beta` Source + One-Click Launcher ZIP on GitHub Releases.
+- [x] Optional local LLM backend (Ollama) + graphical Settings pickers + Windows DPAPI local encryption.
+- [ ] Signed Windows `.exe` installer / auto-updater.
 - [ ] Expanded multi-step workflow templates and visual workflow debugging.
-- [ ] Additional unit tests for live audio handover and PyInstaller smoke checks.
 
 ---
 
