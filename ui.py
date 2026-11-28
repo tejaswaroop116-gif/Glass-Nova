@@ -1,10 +1,10 @@
 """Nova - single-file glass UI for the PC voice assistant. Run: python ui.py"""
-import sys, math, random, time, os, html, json, winreg
+import sys, math, random, time, os, html, json, winreg, threading
 from pathlib import Path
 from PySide6.QtCore import Qt, QProcess, QProcessEnvironment, QTimer, QSettings, QPointF, QRectF, QPoint, QEvent, Signal, QObject, QThread, QPropertyAnimation, QVariantAnimation, QEasingCurve, QAbstractAnimation
 from PySide6.QtGui import QColor as C, QPainter, QPen, QBrush, QRadialGradient, QLinearGradient, QPainterPath, QCursor, QGuiApplication, QIcon, QPixmap, QShortcut, QKeySequence
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-                               QGridLayout, QStackedWidget, QTextEdit, QLineEdit, QMessageBox, QInputDialog, QSlider, QSizeGrip, QMenu, QSystemTrayIcon, QDialog, QListWidget, QListWidgetItem, QScrollArea, QComboBox, QFileDialog)
+                               QGridLayout, QStackedWidget, QTextEdit, QLineEdit, QMessageBox, QInputDialog, QSlider, QSizeGrip, QMenu, QSystemTrayIcon, QDialog, QListWidget, QListWidgetItem, QScrollArea, QComboBox, QFileDialog, QProgressBar)
 from permissions import CATEGORIES, PermissionManager
 from wake_word import WakeWordListener
 from nova_companion_bridge import CompanionBridge
@@ -21,8 +21,9 @@ from nova_workflows import (
     list_workflow_templates, instantiate_template, WorkflowDebugger,
 )
 from nova_updater import (
-    APP_VERSION, RELEASES_PAGE_URL, UpdateCheckResult,
-    check_for_updates, is_trusted_release_url, open_trusted_release_url,
+    APP_VERSION, RELEASES_PAGE_URL, UpdateCheckResult, DownloadResult,
+    check_for_updates, download_update_installer, format_size_mb,
+    is_trusted_release_url, launch_verified_installer, open_trusted_release_url,
 )
 
 from bot import DesktopBot, STATES, cl, ease, glow, gold, hl, lgrad, onyx, pearl, rgrad, st
@@ -220,6 +221,7 @@ class Nova(QMainWindow):
         self.lifecycle.register('companions', stop_fn=self._close_all_companions, priority=30)
         self.lifecycle.register('backend', stop_fn=self.shutdown_backend, priority=40)
         self.lifecycle.register('wake_listener', stop_fn=lambda: self.wake_listener.stop() if getattr(self, 'wake_listener', None) else None, priority=50)
+        self.lifecycle.register('update_download_worker', stop_fn=self._stop_download_worker, priority=54)
         self.lifecycle.register('update_worker', stop_fn=self._stop_update_worker, priority=55)
         self.lifecycle.register('overlays_and_dialogs', stop_fn=self._close_overlays_and_dialogs, priority=60)
         self.lifecycle.register('hotkeys', stop_fn=self._unregister_win32_global_hotkeys, priority=70)
@@ -587,12 +589,17 @@ class Nova(QMainWindow):
         sec_v.addWidget(self.revoke_btn)
         pv.addWidget(sec_box)
 
-        # Software Updates section (read-only official GitHub Releases check)
+        # Software Updates section (verified one-click GitHub Releases updater)
         upd_box, upd_v = self.panel(
             'Software Updates',
-            'Checks official Glass-Nova GitHub Releases. Never downloads or installs automatically.',
+            'Checks official Glass-Nova GitHub Releases, verifies SHA-256 integrity, and installs only with your approval.',
         )
         self._latest_update_url = RELEASES_PAGE_URL
+        self._latest_update_result = None
+        self._verified_download = None
+        self._download_worker = None
+        self._download_cancel_evt = None
+
         self.update_version_lbl = QLabel(f'Installed Version: v{APP_VERSION.lstrip("vV")}')
         self.update_version_lbl.setStyleSheet('font-weight: 600; color: #a5f1ff;')
         upd_v.addWidget(self.update_version_lbl)
@@ -602,12 +609,35 @@ class Nova(QMainWindow):
         self.update_status_lbl.setWordWrap(True)
         upd_v.addWidget(self.update_status_lbl)
 
-        upd_btns = QHBoxLayout(); upd_btns.setSpacing(8)
+        self.update_progress_bar = QProgressBar()
+        self.update_progress_bar.setRange(0, 100)
+        self.update_progress_bar.setValue(0)
+        self.update_progress_bar.setTextVisible(True)
+        self.update_progress_bar.setStyleSheet(
+            'QProgressBar{background:rgba(4,18,34,210);border:1px solid rgba(81,190,238,145);border-radius:8px;height:18px;text-align:center;color:#eaf8ff;font-size:8.5pt}'
+            'QProgressBar::chunk{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #38e8ff,stop:1 #7c6bff);border-radius:7px}'
+        )
+        self.update_progress_bar.setVisible(False)
+        upd_v.addWidget(self.update_progress_bar)
+
+        upd_btns1 = QHBoxLayout(); upd_btns1.setSpacing(8)
         self.update_check_btn = self.button('↻  Check for Updates', self._ui_check_for_updates)
-        self.update_open_btn = self.button('↗  Open Release / Download', self._ui_open_release_page)
-        upd_btns.addWidget(self.update_check_btn)
-        upd_btns.addWidget(self.update_open_btn)
-        upd_v.addLayout(upd_btns)
+        self.update_download_btn = self.button('⬇  Download Update', self._ui_download_update)
+        self.update_download_btn.setEnabled(False)
+        self.update_cancel_btn = self.button('✕  Cancel', self._ui_cancel_download)
+        self.update_cancel_btn.setVisible(False)
+        upd_btns1.addWidget(self.update_check_btn)
+        upd_btns1.addWidget(self.update_download_btn)
+        upd_btns1.addWidget(self.update_cancel_btn)
+        upd_v.addLayout(upd_btns1)
+
+        upd_btns2 = QHBoxLayout(); upd_btns2.setSpacing(8)
+        self.update_install_btn = self.button('⚡  Install Update', self._ui_install_downloaded_update, 'primary')
+        self.update_install_btn.setEnabled(False)
+        self.update_open_btn = self.button('↗  Open Releases Page', self._ui_open_release_page)
+        upd_btns2.addWidget(self.update_install_btn)
+        upd_btns2.addWidget(self.update_open_btn)
+        upd_v.addLayout(upd_btns2)
 
         self.update_notes_box = self.textbox('Release notes will appear here after checking for updates.')
         self.update_notes_box.setMinimumHeight(76)
@@ -1893,37 +1923,207 @@ class Nova(QMainWindow):
 
     def _apply_update_check_result(self, result: UpdateCheckResult):
         self.update_check_btn.setEnabled(True)
+        self._latest_update_result = result
+        self._verified_download = None
+        if hasattr(self, 'update_install_btn'):
+            self.update_install_btn.setEnabled(False)
+        if hasattr(self, 'update_progress_bar'):
+            self.update_progress_bar.setVisible(False)
+            self.update_progress_bar.setValue(0)
         safe_url = result.release_url if is_trusted_release_url(result.release_url) else RELEASES_PAGE_URL
         self._latest_update_url = safe_url
 
         if result.status == 'update_available':
+            size_txt = f' ({format_size_mb(result.asset_size)})' if result.asset_size > 0 else ''
+            if hasattr(self, 'update_version_lbl'):
+                self.update_version_lbl.setText(f'Installed: v{result.current_version.lstrip("vV")}  ·  Latest: {result.latest_version}{size_txt}')
             self.update_status_lbl.setStyleSheet('color: #5efaff; font-weight: 700;')
-            self.update_status_lbl.setText(f'✦ Update available: {result.latest_version} (installed: v{result.current_version.lstrip("vV")})')
-            self.update_open_btn.setText(f'↗  Download {result.latest_version}')
+            if result.has_downloadable_installer and result.asset_sha256:
+                self.update_status_lbl.setText(f'✦ Update available: {result.latest_version}{size_txt} · Official SHA-256 digest ready.')
+                if hasattr(self, 'update_download_btn'):
+                    self.update_download_btn.setEnabled(True)
+                    self.update_download_btn.setText(f'⬇  Download {result.latest_version}')
+            elif result.has_downloadable_installer:
+                self.update_status_lbl.setText(f'✦ Update available: {result.latest_version}{size_txt} (no official SHA-256 digest published — use Open Releases Page).')
+                if hasattr(self, 'update_download_btn'):
+                    self.update_download_btn.setEnabled(False)
+            else:
+                self.update_status_lbl.setText(f'✦ Update available: {result.latest_version} (open GitHub Releases to download).')
+                if hasattr(self, 'update_download_btn'):
+                    self.update_download_btn.setEnabled(False)
+            self.update_open_btn.setText(f'↗  Open {result.latest_version} Page')
         elif result.status == 'up_to_date':
+            if hasattr(self, 'update_version_lbl'):
+                self.update_version_lbl.setText(f'Installed Version: v{result.current_version.lstrip("vV")} (Up to date)')
             self.update_status_lbl.setStyleSheet('color: #6ee7b7; font-weight: 600;')
             self.update_status_lbl.setText(result.message)
+            if hasattr(self, 'update_download_btn'):
+                self.update_download_btn.setEnabled(False)
             self.update_open_btn.setText('↗  Open Releases Page')
-        elif result.status == 'offline':
+        elif result.status in ('offline', 'rate_limited'):
             self.update_status_lbl.setStyleSheet('color: #fbbf24;')
             self.update_status_lbl.setText(result.message)
-        elif result.status == 'rate_limited':
-            self.update_status_lbl.setStyleSheet('color: #fbbf24;')
-            self.update_status_lbl.setText(result.message)
+            if hasattr(self, 'update_download_btn'):
+                self.update_download_btn.setEnabled(False)
         else:
             self.update_status_lbl.setStyleSheet('color: #fda4af;')
             self.update_status_lbl.setText(result.message or 'Update check failed.')
+            if hasattr(self, 'update_download_btn'):
+                self.update_download_btn.setEnabled(False)
 
         if result.release_notes:
             header = f"{result.release_name or result.latest_version}\n" + ("─" * 32) + "\n"
             self.update_notes_box.setPlainText(header + result.release_notes)
+
+    def _ui_download_update(self):
+        res = getattr(self, '_latest_update_result', None)
+        if not res or not res.has_downloadable_installer:
+            return
+        existing = getattr(self, '_download_worker', None)
+        if existing is not None and existing.isRunning():
+            return
+
+        cancel_evt = threading.Event()
+        self._download_cancel_evt = cancel_evt
+        self._verified_download = None
+        self.update_download_btn.setEnabled(False)
+        self.update_check_btn.setEnabled(False)
+        self.update_install_btn.setEnabled(False)
+        self.update_cancel_btn.setVisible(True)
+        self.update_cancel_btn.setEnabled(True)
+        self.update_progress_bar.setValue(0)
+        self.update_progress_bar.setVisible(True)
+        self.update_status_lbl.setStyleSheet('color: #a5f1ff;')
+        self.update_status_lbl.setText(f'Downloading {res.asset_name}…')
+
+        class _DownloadWorker(QThread):
+            progress = Signal(int, int, int)
+            completed = Signal(object)
+
+            def run(self):
+                dl = download_update_installer(
+                    res,
+                    on_progress=lambda done, tot, pct: self.progress.emit(done, tot, pct) if not cancel_evt.is_set() else None,
+                    is_cancelled=lambda: cancel_evt.is_set() or self.isInterruptionRequested(),
+                )
+                if not self.isInterruptionRequested():
+                    self.completed.emit(dl)
+
+        worker = _DownloadWorker()
+        self._download_worker = worker
+        worker.progress.connect(self._on_download_progress)
+        worker.completed.connect(self._apply_download_result)
+        worker.finished.connect(lambda w=worker: self._on_download_worker_finished(w))
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def _on_download_progress(self, downloaded: int, total: int, pct: int):
+        self.update_progress_bar.setValue(max(0, min(100, int(pct))))
+        if total > 0:
+            self.update_status_lbl.setText(f'Downloading update… {pct}% ({format_size_mb(downloaded)} / {format_size_mb(total)})')
+        else:
+            self.update_status_lbl.setText(f'Downloading update… {format_size_mb(downloaded)}')
+
+    def _ui_cancel_download(self):
+        evt = getattr(self, '_download_cancel_evt', None)
+        if evt is not None:
+            evt.set()
+        if hasattr(self, 'update_cancel_btn'):
+            self.update_cancel_btn.setEnabled(False)
+        self.update_status_lbl.setStyleSheet('color: #fbbf24;')
+        self.update_status_lbl.setText('Cancelling download…')
+
+    def _on_download_worker_finished(self, worker):
+        if getattr(self, '_download_worker', None) is worker:
+            self._download_worker = None
+
+    def _stop_download_worker(self):
+        evt = getattr(self, '_download_cancel_evt', None)
+        if evt is not None:
+            evt.set()
+        worker = getattr(self, '_download_worker', None)
+        if worker is None:
+            return
+        self._download_worker = None
+        try:
+            worker.progress.disconnect(self._on_download_progress)
+        except Exception:
+            pass
+        try:
+            worker.completed.disconnect(self._apply_download_result)
+        except Exception:
+            pass
+        try:
+            worker.requestInterruption()
+            if worker.isRunning():
+                worker.wait(350)
+        except Exception:
+            pass
+
+    def _apply_download_result(self, dl: DownloadResult):
+        self.update_check_btn.setEnabled(True)
+        self.update_cancel_btn.setVisible(False)
+        if dl.status == 'verified' and dl.verified:
+            self._verified_download = dl
+            self.update_progress_bar.setValue(100)
+            self.update_status_lbl.setStyleSheet('color: #6ee7b7; font-weight: 700;')
+            self.update_status_lbl.setText(f'✓ {dl.message} — Ready to install.')
+            self.update_install_btn.setEnabled(True)
+            self.update_download_btn.setEnabled(False)
+        elif dl.status == 'cancelled':
+            self._verified_download = None
+            self.update_progress_bar.setVisible(False)
+            self.update_status_lbl.setStyleSheet('color: #fbbf24;')
+            self.update_status_lbl.setText('Download cancelled. Click Download Update to retry anytime.')
+            self.update_install_btn.setEnabled(False)
+            self.update_download_btn.setEnabled(bool(self._latest_update_result and self._latest_update_result.has_downloadable_installer))
+        else:
+            self._verified_download = None
+            self.update_progress_bar.setVisible(False)
+            self.update_status_lbl.setStyleSheet('color: #fda4af;')
+            self.update_status_lbl.setText(dl.message or 'Download failed. You can retry or use Open Releases Page.')
+            self.update_install_btn.setEnabled(False)
+            self.update_download_btn.setEnabled(bool(self._latest_update_result and self._latest_update_result.has_downloadable_installer and self._latest_update_result.asset_sha256))
+
+    def _ui_install_downloaded_update(self):
+        dl = getattr(self, '_verified_download', None)
+        if not dl or not dl.verified or dl.status != 'verified':
+            QMessageBox.warning(self, 'Unverified Update', 'No verified installer is ready. Please download and verify the update first.')
+            return
+
+        fname = Path(dl.file_path).name
+        ans = QMessageBox.question(
+            self,
+            'Install Verified Glass Nova Update',
+            f'Verified installer ready:\n  {fname}\n  SHA-256: {dl.sha256[:16]}…\n\n'
+            'Glass Nova will close cleanly and launch the Windows installer so you can complete the update.\n'
+            '• Your settings, API key, and workflows in %APPDATA%\\PC_Complete_Assistant will be preserved.\n'
+            '• If Glass Nova does not reopen automatically after installation, launch it from your Start Menu or Desktop shortcut.\n\n'
+            'Close Glass Nova and launch the installer now?',
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if ans != QMessageBox.Yes:
+            return
+
+        self.update_install_btn.setEnabled(False)
+        self.update_status_lbl.setStyleSheet('color: #5efaff; font-weight: 600;')
+        self.update_status_lbl.setText('Launching verified Windows installer and closing Glass Nova…')
+        ok, msg = launch_verified_installer(dl)
+        if not ok:
+            self.update_status_lbl.setStyleSheet('color: #fda4af;')
+            self.update_status_lbl.setText(msg)
+            QMessageBox.warning(self, 'Update Launch Failed', f'{msg}\n\nYou can also install manually via Open Releases Page.')
+            return
+
+        self.append_log(f'[Updater] {msg}')
+        QTimer.singleShot(150, self.quit_app)
 
     def _ui_open_release_page(self):
         target = self._latest_update_url if is_trusted_release_url(self._latest_update_url) else RELEASES_PAGE_URL
         ans = QMessageBox.question(
             self,
             'Open Official GitHub Release',
-            f'Open the official Glass Nova release page in your browser?\n\n{target}\n\nGlass Nova will never download or run installers automatically.',
+            f'Open the official Glass Nova release page in your browser?\n\n{target}\n\nGlass Nova will never run installers without your explicit confirmation.',
             QMessageBox.Yes | QMessageBox.No,
         )
         if ans == QMessageBox.Yes:
