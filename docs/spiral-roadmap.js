@@ -312,12 +312,40 @@ if (!journey || !sticky || !container) {
     });
   }
 
+  const milestoneStatuses = [
+    { label: 'COMPLETED · v1.0.0-beta', cls: 'complete' },
+    { label: 'COMPLETED · ACTIVE POLISH', cls: 'complete' },
+    { label: 'SHIPPED · ONGOING TUNING', cls: 'current' },
+    { label: 'SHIPPED · ONGOING EXPANSION', cls: 'current' },
+    { label: 'PLANNED · FUTURE VISION', cls: 'upcoming' }
+  ];
+
   const featureSets = [
-    ['PySide6 desktop & backend', 'Gemini Live · offline mode · tray', 'Permissions · action routing · verification'],
-    ['Ollama local AI', 'Memory · context · knowledge indexing', 'Offline agent · document/code analysis'],
-    ['Hey Nova wake word', 'Screen · gesture · audio perception', 'Region pointing · video-frame understanding'],
-    ['Desktop & file control', 'Mouse/keyboard · browser · workflows', 'Permission-gated actions · verification'],
-    ['Adaptive personalization (future)', 'Expanding skills & capabilities', 'Long-term intelligence · self-improvement vision']
+    [
+      { tag: 'DONE', cls: 'done', text: 'PySide6 desktop UI, backend IPC & v1.0.0-beta ZIP launcher' },
+      { tag: 'DONE', cls: 'done', text: 'Gemini Live, 0 ms offline mode, Vosk & Windows SAPI TTS' },
+      { tag: 'DONE', cls: 'done', text: 'Fail-closed 9-category permissions & Windows DPAPI encryption' }
+    ],
+    [
+      { tag: 'DONE', cls: 'done', text: 'Local Ollama runtime (qwen2.5:3b, moondream) & Settings UI' },
+      { tag: 'DONE', cls: 'done', text: 'Local memory, opt-in TF-IDF/embedding index & Safe Python' },
+      { tag: 'ONGOING', cls: 'ongoing', text: 'Deeper multi-step offline reasoning & modular orchestration' }
+    ],
+    [
+      { tag: 'DONE', cls: 'done', text: 'Offline "Hey Nova" wake word & AUTO NEAREST mic calibration' },
+      { tag: 'DONE', cls: 'done', text: 'Webcam hand-gesture mouse, Point at Screen & video frames' },
+      { tag: 'ONGOING', cls: 'ongoing', text: 'Continuous multimodal perception & gesture responsiveness' }
+    ],
+    [
+      { tag: 'DONE', cls: 'done', text: 'Verified Windows UIAutomation, Playwright & YouTube controls' },
+      { tag: 'DONE', cls: 'done', text: 'Guided walkthroughs & reusable semantic workflow replay' },
+      { tag: 'PLANNED', cls: 'planned', text: 'Expanded workflow templates & visual workflow debugging' }
+    ],
+    [
+      { tag: 'PLANNED', cls: 'planned', text: 'Signed Windows .exe installer & seamless auto-updater' },
+      { tag: 'PLANNED', cls: 'planned', text: 'Expanded plugin/skill ecosystem & workflow templates' },
+      { tag: 'PLANNED', cls: 'planned', text: 'Adaptive long-term personalization (future vision)' }
+    ]
   ];
 
   const content = [
@@ -412,16 +440,16 @@ if (!journey || !sticky || !container) {
         num.textContent = content[st][0];
         heading.textContent = content[st][1];
         desc.textContent = content[st][2];
-        featureList.innerHTML = featureSets[st].map((x) => '<li>' + x + '</li>').join('');
+        featureList.innerHTML = featureSets[st].map((x) => '<li><span class="sr-tag sr-tag-' + x.cls + '">' + x.tag + '</span><span>' + x.text + '</span></li>').join('');
         chapter.textContent = content[st][0].replace(' / ', ' — ');
         scrolllabel.textContent = 'Waypoint ' + (st + 1) + ' · reached';
       }
 
-      const statusText = progress >= 0.995 ? 'COMPLETED' : (st < q.seg ? 'COMPLETED' : (st === q.seg ? 'IN PROGRESS' : 'UPCOMING'));
-      if (statusText !== lastStatusText) {
-        lastStatusText = statusText;
-        statusEl.textContent = statusText;
-        statusEl.className = 'sr-milestone-status ' + (statusText === 'COMPLETED' ? 'complete' : statusText === 'IN PROGRESS' ? 'current' : 'upcoming');
+      const stMeta = milestoneStatuses[st] || { label: 'PLANNED', cls: 'upcoming' };
+      if (stMeta.label !== lastStatusText) {
+        lastStatusText = stMeta.label;
+        statusEl.textContent = stMeta.label;
+        statusEl.className = 'sr-milestone-status ' + stMeta.cls;
       }
 
       if (progress > 0.12 && q.ride < 0.975 && window.innerWidth > 700) {

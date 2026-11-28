@@ -1874,3 +1874,457 @@ body.roadmap-active .nav-shell {
   .pedestal-sprite { width: 164px; height: 164px; }
   .pedestal-ring { width: 196px; height: 196px; }
 }
+
+
+/* =========================================================
+   CINEMATIC 3D UPGRADE — LOADER, TELEMETRY HUD, KINETIC TYPE,
+   INTRO STORY, VOICE WAVEFORM, CAPABILITY VISUALS & FINALE
+   ========================================================= */
+
+/* 1. Fast Cinematic Boot Veil */
+.nova-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 45%, #091020 0%, #040509 70%);
+  transition: opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1), visibility 0.55s ease;
+}
+.nova-loader.is-done {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.nova-loader-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.nova-loader-mark {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.36em;
+  color: #dff7ff;
+  text-shadow: 0 0 22px rgba(56, 232, 255, 0.55);
+}
+.nova-loader-bar {
+  width: 140px;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.nova-loader-bar span {
+  display: block;
+  width: 55%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--cyan), var(--violet));
+  box-shadow: 0 0 12px var(--cyan);
+  animation: novaBootSlide 0.9s ease-in-out infinite;
+}
+@keyframes novaBootSlide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(220%); }
+}
+
+/* 2. Minimal Left-Edge Scroll Cue & Corner-Bracketed Telemetry HUD */
+.cine-scroll-cue {
+  position: fixed;
+  left: 22px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: rgba(190, 235, 255, 0.55);
+  pointer-events: none;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+.cine-scroll-cue.is-hidden {
+  opacity: 0;
+  transform: translateY(-42%);
+}
+.cine-scroll-cue svg {
+  filter: drop-shadow(0 0 6px rgba(56, 232, 255, 0.35));
+  animation: cueBob 2.2s ease-in-out infinite;
+}
+.cine-scroll-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: 0 0 10px var(--cyan);
+}
+@keyframes cueBob {
+  0%, 100% { transform: translateY(0); opacity: 0.65; }
+  50% { transform: translateY(6px); opacity: 1; }
+}
+
+.cine-hud {
+  position: fixed;
+  right: 26px;
+  bottom: 24px;
+  z-index: 45;
+  width: 210px;
+  padding: 10px 12px 11px;
+  pointer-events: none;
+  background: rgba(6, 10, 18, 0.56);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+.cine-hud::before,
+.cine-hud::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  width: 10px;
+  height: 10px;
+  border-top: 1.5px solid rgba(56, 232, 255, 0.65);
+}
+.cine-hud::before {
+  left: -1px;
+  border-left: 1.5px solid rgba(56, 232, 255, 0.65);
+  border-top-left-radius: 10px;
+}
+.cine-hud::after {
+  right: -1px;
+  border-right: 1.5px solid rgba(155, 123, 255, 0.65);
+  border-top-right-radius: 10px;
+}
+.cine-hud.is-hidden {
+  opacity: 0;
+  transform: translateY(10px);
+}
+.cine-hud-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  color: rgba(215, 235, 255, 0.78);
+  margin-bottom: 7px;
+}
+.cine-hud-track {
+  position: relative;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.cine-hud-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--cyan), var(--violet));
+  box-shadow: 0 0 10px rgba(56, 232, 255, 0.65);
+}
+
+/* 3. Kinetic Typography Word Wrapper */
+.k-word-wrap {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+  padding-bottom: 0.08em;
+  margin-bottom: -0.08em;
+}
+.k-word {
+  display: inline-block;
+  will-change: transform, opacity;
+}
+
+/* 4. Cinematic Introduction Section (#intro) */
+.intro-scene {
+  padding: 112px 0;
+}
+.intro-story {
+  max-width: 860px;
+  margin-bottom: 48px;
+}
+.intro-headline {
+  font-size: clamp(2rem, 4.1vw, 3.35rem);
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+  margin: 14px 0 20px;
+}
+.intro-lead {
+  font-size: 1.08rem;
+  color: var(--text-muted);
+  max-width: 720px;
+  margin: 0;
+  line-height: 1.72;
+}
+.intro-pillars {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+}
+.intro-pillar {
+  padding: 28px 24px;
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pillar-num {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  letter-spacing: 0.18em;
+  color: var(--cyan);
+}
+.intro-pillar h3 {
+  margin: 2px 0 4px;
+  font-size: 1.18rem;
+}
+.intro-pillar p {
+  margin: 0;
+  font-size: 0.93rem;
+  color: var(--text-muted);
+  line-height: 1.65;
+}
+
+/* 5. Live Reactive Voice Waveform Visualizer (#modes) */
+.voice-wave {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 44px;
+  margin: 18px 0 14px;
+  padding: 0 16px;
+  border-radius: 14px;
+  background: rgba(4, 8, 16, 0.58);
+  border: 1px solid rgba(56, 232, 255, 0.16);
+}
+.voice-wave span {
+  display: block;
+  width: 4px;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--cyan), var(--violet));
+  box-shadow: 0 0 10px rgba(56, 232, 255, 0.45);
+  transition: height 0.25s ease, opacity 0.25s ease, background 0.25s ease;
+}
+.voice-wave.is-full span {
+  animation: wavePulse 1.05s ease-in-out infinite;
+}
+.voice-wave.is-listen span {
+  background: linear-gradient(180deg, var(--cyan), var(--blue));
+  animation: wavePulse 1.35s ease-in-out infinite;
+}
+.voice-wave.is-speak span {
+  background: linear-gradient(180deg, var(--violet), var(--cyan));
+  animation: wavePulse 1.2s ease-in-out infinite;
+}
+.voice-wave.is-locked span,
+.voice-wave.is-silent span {
+  height: 4px !important;
+  opacity: 0.28;
+  animation: none;
+  background: #64748b;
+  box-shadow: none;
+}
+.voice-wave span:nth-child(2n) { animation-delay: 0.14s; }
+.voice-wave span:nth-child(3n) { animation-delay: 0.28s; }
+.voice-wave span:nth-child(4n) { animation-delay: 0.42s; }
+.voice-wave span:nth-child(5n) { animation-delay: 0.56s; }
+@keyframes wavePulse {
+  0%, 100% { height: 8px; opacity: 0.55; }
+  50% { height: 30px; opacity: 1; }
+}
+
+/* 6. Interactive Animated Capability Visual Stage (#capabilities) */
+.cap-visual-stage {
+  margin-bottom: 22px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 0%, rgba(56, 232, 255, 0.12), rgba(5, 8, 16, 0.85) 75%);
+  border: 1px solid rgba(56, 232, 255, 0.18);
+  padding: 12px;
+}
+.cap-viz svg {
+  width: 100%;
+  height: auto;
+  max-height: 156px;
+  display: block;
+}
+.viz-scan-line {
+  animation: vizScan 2.6s ease-in-out infinite;
+}
+@keyframes vizScan {
+  0%, 100% { transform: translateY(0px); opacity: 0.4; }
+  50% { transform: translateY(68px); opacity: 1; }
+}
+.viz-pulse-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: vizPulse 2.2s ease-in-out infinite;
+}
+@keyframes vizPulse {
+  0%, 100% { transform: scale(0.92); opacity: 0.65; }
+  50% { transform: scale(1.1); opacity: 1; }
+}
+.viz-flow-path {
+  animation: vizDash 1.8s linear infinite;
+}
+@keyframes vizDash {
+  to { stroke-dashoffset: -22; }
+}
+.viz-playhead {
+  animation: vizPlayhead 3.2s ease-in-out infinite;
+}
+@keyframes vizPlayhead {
+  0%, 100% { transform: translateX(-34px); }
+  50% { transform: translateX(88px); }
+}
+.viz-verified-box {
+  animation: vizGlow 2.4s ease-in-out infinite;
+}
+@keyframes vizGlow {
+  0%, 100% { stroke-opacity: 0.65; }
+  50% { stroke-opacity: 1; }
+}
+
+/* 7. Roadmap Status Legend & Per-Feature Status Tags */
+.sr-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  color: #9cb8cc;
+}
+.sr-leg-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-left: 6px;
+}
+.sr-leg-dot.is-done { background: #34d399; box-shadow: 0 0 8px #34d399; }
+.sr-leg-dot.is-ongoing { background: #38e8ff; box-shadow: 0 0 8px #38e8ff; }
+.sr-leg-dot.is-planned { background: #9b7bff; box-shadow: 0 0 8px #9b7bff; }
+
+.sr-feature-list li::before {
+  display: none;
+}
+.sr-feature-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.sr-tag {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.sr-tag-done {
+  background: rgba(52, 211, 153, 0.16);
+  color: #6ee7b7;
+  border: 1px solid rgba(52, 211, 153, 0.4);
+}
+.sr-tag-ongoing {
+  background: rgba(56, 232, 255, 0.16);
+  color: #7eeeff;
+  border: 1px solid rgba(56, 232, 255, 0.4);
+}
+.sr-tag-planned {
+  background: rgba(155, 123, 255, 0.16);
+  color: #c7b6ff;
+  border: 1px solid rgba(155, 123, 255, 0.4);
+}
+
+/* 8. Memorable Cinematic Finale Scene (#finale) */
+.finale-scene {
+  min-height: 76vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 120px 0 110px;
+  background: radial-gradient(ellipse 75% 55% at 50% 50%, rgba(56, 232, 255, 0.08), transparent 70%);
+}
+.finale-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+.finale-wordmark {
+  margin: 4px 0 6px;
+  font-size: clamp(2.8rem, 9vw, 6.4rem);
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  background: linear-gradient(125deg, #ffffff 15%, #9beeff 52%, #b8a3ff 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 60px rgba(56, 232, 255, 0.25);
+}
+.finale-tagline {
+  max-width: 600px;
+  margin: 0;
+  font-size: 1.08rem;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+.finale-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+/* Responsive overrides for new cinematic modules */
+@media (max-width: 1020px) {
+  .intro-pillars { grid-template-columns: 1fr; }
+  .cine-scroll-cue { display: none; }
+}
+@media (max-width: 700px) {
+  .cine-hud { display: none; }
+  .sr-legend { display: none; }
+  .intro-scene { padding: 72px 0; }
+  .finale-scene { min-height: auto; padding: 84px 0 76px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nova-loader { display: none !important; }
+  .voice-wave span,
+  .viz-scan-line,
+  .viz-pulse-dot,
+  .viz-flow-path,
+  .viz-playhead,
+  .viz-verified-box,
+  .cine-scroll-cue svg {
+    animation: none !important;
+  }
+}
+
+/* Anchor scroll offset & strict mobile horizontal containment (preserves position:sticky) */
+section[id] {
+  scroll-margin-top: 88px;
+}
+#roadmap {
+  scroll-margin-top: 0;
+}
+.terminal-card,
+.terminal-card pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.hero-scene,
+.scene,
+.finale-scene {
+  overflow-x: clip;
+}

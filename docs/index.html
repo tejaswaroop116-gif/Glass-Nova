@@ -44,7 +44,7 @@
   <!-- Critical Inline Accessibility, Mobile & Reduced-Motion Styles -->
   <style>
     *, *::before, *::after { box-sizing: border-box; }
-    html { scroll-behavior: smooth; color-scheme: dark; }
+    html { scroll-behavior: smooth; color-scheme: dark; overflow-x: clip; }
     body {
       margin: 0;
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -52,7 +52,7 @@
       color: #f4f7fd;
       line-height: 1.6;
       -webkit-font-smoothing: antialiased;
-      overflow-x: hidden;
+      overflow-x: clip;
     }
     img { max-width: 100%; height: auto; display: block; }
     a { color: inherit; text-decoration: none; }
@@ -107,11 +107,19 @@
       .js .reveal:not(.is-visible) { opacity: 1; transform: none; }
     }
   </style>
-  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="stylesheet" href="styles.css?v=6">
   <script>document.documentElement.classList.add('js');</script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to main content</a>
+
+  <!-- Cinematic Boot Veil (auto-dismisses fast, never blocks reduced-motion) -->
+  <div class="nova-loader" id="nova-loader" aria-hidden="true">
+    <div class="nova-loader-inner">
+      <span class="nova-loader-mark">GLASS NOVA</span>
+      <span class="nova-loader-bar"><span></span></span>
+    </div>
+  </div>
 
   <!-- Optical Liquid Glass SVG Displacement Filter -->
   <svg width="0" height="0" style="position:absolute; pointer-events:none;" aria-hidden="true">
@@ -124,10 +132,29 @@
     </defs>
   </svg>
 
-  <!-- Clean Interactive 3D Geometric Canvas -->
+  <!-- Clean Interactive 3D Geometric WebGL Canvas -->
   <canvas id="nova-webgl" aria-hidden="true"></canvas>
   <div class="ambient-vignette" aria-hidden="true"></div>
   <div class="scroll-rail" aria-hidden="true"><div class="scroll-rail-fill" id="scroll-rail-fill"></div></div>
+
+  <!-- Minimal Left-Edge Scroll Direction Cue (Codrops Demo 2 inspired) -->
+  <div class="cine-scroll-cue" id="cine-scroll-cue" aria-hidden="true">
+    <svg width="20" height="30" viewBox="0 0 24 32" fill="none">
+      <path d="M 12 4 L 12 24 M 12 24 L 8 20 M 12 24 L 16 20" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+    </svg>
+    <span class="cine-scroll-dot"></span>
+  </div>
+
+  <!-- Corner-Bracketed Telemetry HUD (Codrops Demo 2 inspired) -->
+  <div class="cine-hud" id="cine-hud" aria-hidden="true">
+    <div class="cine-hud-meta">
+      <span id="cine-hud-chapter">01 · HERO</span>
+      <span id="cine-hud-pct">000%</span>
+    </div>
+    <div class="cine-hud-track">
+      <div class="cine-hud-fill" id="cine-hud-fill"></div>
+    </div>
+  </div>
 
   <!-- Floating Liquid Glass Navigation -->
   <header class="site-header">
@@ -141,6 +168,7 @@
 
       <nav aria-label="Primary navigation">
         <ul class="nav-links" id="primary-nav">
+          <li><a href="#intro">About</a></li>
           <li><a href="#modes">Modes</a></li>
           <li><a href="#capabilities">Capabilities</a></li>
           <li><a href="#roadmap">Roadmap</a></li>
@@ -171,7 +199,7 @@
               <span>v1.0.0-beta Live &bull; Open-Source &bull; Windows 10/11</span>
             </div>
 
-            <h1>
+            <h1 data-kinetic>
               Desktop intelligence,
               <span class="title-accent">reimagined in glass and local control.</span>
             </h1>
@@ -240,13 +268,48 @@
     </section>
 
     <!-- =======================================================
-         02 — OPERATING MODES & INDEPENDENT VOICE CONTROLS
+         02 — CINEMATIC INTRODUCTION: WHAT IS GLASS NOVA?
+         ======================================================= -->
+    <section class="scene scene-divider intro-scene" id="intro">
+      <div class="container">
+        <div class="intro-story">
+          <div class="scene-kicker reveal"><span class="idx">02</span> What Is Glass Nova</div>
+          <h2 class="intro-headline" data-kinetic>
+            An open-source Windows assistant built to feel <span class="title-accent">weightless, private, and genuinely useful.</span>
+          </h2>
+          <p class="intro-lead reveal">
+            Glass Nova pairs a frameless PySide6 liquid-glass interface with a structured Python engine — bridging real-time Gemini Live voice, instant 0 ms offline commands, verified UIAutomation, and floating desktop companions behind explicit human consent.
+          </p>
+        </div>
+
+        <div class="intro-pillars">
+          <article class="intro-pillar liquid-glass">
+            <span class="pillar-num">01</span>
+            <h3>Two-Process Architecture</h3>
+            <p>A responsive PySide6 glass window communicates over structured JSON IPC (<code>@@NOVA@@</code>) with a dedicated Python backend so audio, wake-word, and tools stay smooth.</p>
+          </article>
+          <article class="intro-pillar liquid-glass">
+            <span class="pillar-num">02</span>
+            <h3>Cloud + 0 ms Local Autonomy</h3>
+            <p>Use Gemini Live voice &amp; vision online, or disconnect completely with local Vosk speech, Windows SAPI TTS, deterministic reflexes, and optional Ollama models.</p>
+          </article>
+          <article class="intro-pillar liquid-glass">
+            <span class="pillar-num">03</span>
+            <h3>Fail-Closed by Default</h3>
+            <p>Every sensitive action passes through 9 explicit permission gates and DPAPI local encryption. AI models can check or revoke access — never grant it themselves.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================
+         03 — OPERATING MODES & INDEPENDENT VOICE CONTROLS
          ======================================================= -->
     <section class="scene scene-divider" id="modes">
       <div class="container">
         <div class="scene-intro reveal">
-          <div class="scene-kicker"><span class="idx">02</span> Modes &amp; Voice</div>
-          <h2>Cloud speed when connected. Local autonomy when offline.</h2>
+          <div class="scene-kicker"><span class="idx">03</span> Modes &amp; Voice</div>
+          <h2 data-kinetic>Cloud speed when connected. Local autonomy when offline.</h2>
           <p>Switch cleanly between Online, Offline, and Hybrid modes. Every requirement and limitation below matches the actual repository implementation.</p>
         </div>
 
@@ -351,6 +414,11 @@
             <button class="toggle-pill" type="button" id="btn-textmode" data-control="textmode" aria-pressed="false">Text Mode Lock: OFF</button>
           </div>
 
+          <div class="voice-wave is-full" id="voice-wave" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
+
           <div class="sim-readout" id="control-readout" aria-live="polite">
             <strong>Full Voice Mode:</strong> Microphone listening and spoken replies are both active across Online (Gemini Live), Offline (Vosk + Windows SAPI), and Hybrid modes.
           </div>
@@ -359,14 +427,14 @@
     </section>
 
     <!-- =======================================================
-         03 — CODE-VERIFIED CAPABILITIES
+         04 — CODE-VERIFIED CAPABILITIES
          ======================================================= -->
     <section class="scene scene-divider" id="capabilities">
       <div class="container">
         <div class="scene-intro reveal">
-          <div class="scene-kicker"><span class="idx">03</span> Capabilities</div>
-          <h2>Six verified desktop disciplines, backed by real code.</h2>
-          <p>Select any capability to view its online/offline path, required permission gates, and actual Python modules.</p>
+          <div class="scene-kicker"><span class="idx">04</span> Capabilities</div>
+          <h2 data-kinetic>Six verified desktop disciplines, backed by real code.</h2>
+          <p>Select any capability to see its live visual architecture, online/offline path, required permission gates, and actual Python modules.</p>
         </div>
 
         <div class="theater-grid">
@@ -398,6 +466,7 @@
           </div>
 
           <div class="theater-stage liquid-glass liquid-glass-refract reveal">
+            <div class="cap-visual-stage" id="cap-visual"></div>
             <div>
               <div class="meta-pills" id="cap-pills" style="margin-bottom:18px;">
                 <span class="pill pill-cyan">Online: Gemini Vision</span>
@@ -429,7 +498,12 @@
           <div class="sr-completion-flash" id="sr-completionFlash" aria-hidden="true"></div>
 
           <div class="sr-hud">
-            <span>04 · NOVA / EVOLUTION</span>
+            <span>05 · NOVA / EVOLUTION</span>
+            <span class="sr-legend" aria-label="Roadmap status legend">
+              <span class="sr-leg-dot is-done"></span>Completed
+              <span class="sr-leg-dot is-ongoing"></span>Ongoing
+              <span class="sr-leg-dot is-planned"></span>Planned
+            </span>
             <span id="sr-chapter">OVERVIEW</span>
           </div>
 
@@ -488,13 +562,13 @@
     </section>
 
     <!-- =======================================================
-         05 — 3D INTERACTIVE COMPANIONS ORBIT
+         06 — 3D INTERACTIVE COMPANIONS ORBIT
          ======================================================= -->
     <section class="scene scene-divider" id="companions">
       <div class="container">
         <div class="scene-intro reveal">
-          <div class="scene-kicker"><span class="idx">05</span> Companions</div>
-          <h2>Four animated PySide6 companions, floating on your desktop.</h2>
+          <div class="scene-kicker"><span class="idx">06</span> Companions</div>
+          <h2 data-kinetic>Four animated PySide6 companions, floating on your desktop.</h2>
           <p>Each companion runs as a frameless transparent Windows overlay. Swipe, tilt, or click to orbit through all four real companion characters.</p>
         </div>
 
@@ -583,8 +657,8 @@
       <div class="container">
         <div class="security-layout">
           <div class="reveal">
-            <div class="scene-kicker"><span class="idx">06</span> Privacy &amp; Control</div>
-            <h2>Fail-closed permissions that AI models cannot self-grant.</h2>
+            <div class="scene-kicker"><span class="idx">07</span> Privacy &amp; Control</div>
+            <h2 data-kinetic>Fail-closed permissions that AI models cannot self-grant.</h2>
             <p style="color:var(--text-muted); margin:0 0 10px;">
               AI tools can only check status or revoke permissions — never grant them. Tap any of the 9 categories to inspect its rule:
             </p>
@@ -646,13 +720,13 @@
     </section>
 
     <!-- =======================================================
-         06 — SETUP, REQUIREMENTS & HONEST PROJECT STATUS
+         08 — SETUP, REQUIREMENTS & HONEST PROJECT STATUS
          ======================================================= -->
     <section class="scene scene-divider" id="setup">
       <div class="container">
         <div class="scene-intro reveal">
-          <div class="scene-kicker"><span class="idx">07</span> Download &amp; Setup</div>
-          <h2>Download v1.0.0-beta or run from source on GitHub.</h2>
+          <div class="scene-kicker"><span class="idx">08</span> Download &amp; Setup</div>
+          <h2 data-kinetic>Download v1.0.0-beta or run from source on GitHub.</h2>
           <p>Download the beginner-friendly Windows ZIP (no Git required), extract it, and double-click <code>Start_Glass_Nova.bat</code>. The first online launch installs dependencies into an isolated <code>.venv</code> and caches the ~40 MB Vosk offline voice model — subsequent launches start fast, even offline.</p>
         </div>
 
@@ -702,6 +776,24 @@ ollama pull moondream</code></pre>
         </div>
       </div>
     </section>
+
+    <!-- =======================================================
+         09 — CINEMATIC FINALE SCENE
+         ======================================================= -->
+    <section class="scene scene-divider finale-scene" id="finale">
+      <div class="container finale-inner">
+        <div class="scene-kicker reveal"><span class="idx">09</span> Ready for Windows 10 &amp; 11</div>
+        <h2 class="finale-wordmark">GLASS NOVA</h2>
+        <p class="finale-tagline reveal">
+          Open-source desktop intelligence. Local when you need privacy. Cloud-powered when you want speed. Always under your control.
+        </p>
+        <div class="finale-actions reveal">
+          <a class="btn btn-primary" href="https://github.com/tejaswaroop30/Glass-Nova/releases/download/v1.0.0-beta/GlassNova-Windows-Source-Launcher.zip">Download v1.0.0-beta (ZIP)</a>
+          <a class="btn btn-glass" href="https://github.com/tejaswaroop30/Glass-Nova" target="_blank" rel="noopener noreferrer">Explore on GitHub</a>
+          <a class="btn btn-glass" href="https://github.com/tejaswaroop30/Glass-Nova/releases/tag/v1.0.0-beta" target="_blank" rel="noopener noreferrer">Release Notes</a>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer class="site-footer">
@@ -719,8 +811,11 @@ ollama pull moondream</code></pre>
     </div>
   </footer>
 
-  <script src="scene.js?v=4" defer></script>
-  <script src="app.js?v=4" defer></script>
-  <script type="module" src="spiral-roadmap.js?v=5"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js" defer></script>
+  <script type="module" src="scene.js?v=6"></script>
+  <script src="app.js?v=6" defer></script>
+  <script src="cinematic.js?v=6" defer></script>
+  <script type="module" src="spiral-roadmap.js?v=6"></script>
 </body>
 </html>
