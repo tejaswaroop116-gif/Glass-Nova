@@ -42,6 +42,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           python -B test_nus_feature_pack.py -v
+          python -B test_workflows_milestone.py -v
 
       - name: Run Glass Nova integration tests
         env:

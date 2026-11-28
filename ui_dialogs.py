@@ -9,7 +9,7 @@ from PySide6.QtCore import Qt, QPointF, QRectF, QTimer, Signal
 from PySide6.QtGui import QColor as C, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QDialog, QFrame, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QPushButton, QSlider, QVBoxLayout, QWidget,
+    QListWidget, QListWidgetItem, QPushButton, QSlider, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from bot import cl, lgrad, st
@@ -640,4 +640,338 @@ class WorkflowEditorDialog(QDialog):
         clean = self.name_input.text().strip()
         if clean:
             self.workflow_name = clean
+        self.accept()
+
+
+
+class WorkflowTemplatesDialog(QDialog):
+    """Glass UI picker for curated, allow-listed multi-step Glass Nova workflow templates."""
+
+    def __init__(self, templates: list[dict], parent=None):
+        super().__init__(parent, Qt.Dialog | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self._templates = list(templates or [])
+        self.selected_template_id = ""
+        self.custom_name = ""
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        panel = QFrame()
+        panel.setObjectName("panel")
+        panel.setStyleSheet("""
+            QFrame#panel {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 rgba(14, 42, 70, 245),
+                    stop:0.5 rgba(8, 28, 52, 250),
+                    stop:1 rgba(4, 16, 32, 255));
+                border: 1.5px solid rgba(80, 210, 255, 180);
+                border-radius: 20px;
+            }
+            QListWidget, QTextEdit {
+                background: rgba(6, 22, 42, 210);
+                border: 1px solid rgba(81, 190, 238, 135);
+                border-radius: 12px;
+                padding: 6px;
+                color: #eaf8ff;
+            }
+            QListWidget::item {
+                padding: 8px;
+                border-radius: 6px;
+                margin-bottom: 3px;
+            }
+            QListWidget::item:selected {
+                background: rgba(32, 145, 205, 165);
+                border: 1px solid #5efaff;
+            }
+        """)
+        pl = QVBoxLayout(panel)
+        pl.setContentsMargins(22, 20, 22, 20)
+        pl.setSpacing(10)
+
+        hdr = QLabel("✦  Workflow Templates Library")
+        hdr.setStyleSheet("font-size: 13.5pt; font-weight: 700; color: #a5f1ff;")
+        pl.addWidget(hdr)
+
+        sub = QLabel("Curated semantic workflows — strictly allow-listed, DPAPI-encrypted at rest, and confirmed step-by-step on replay.")
+        sub.setWordWrap(True)
+        sub.setStyleSheet("color: #b4d8ea; font-size: 9.5pt;")
+        pl.addWidget(sub)
+
+        body = QHBoxLayout()
+        body.setSpacing(12)
+
+        self.list_widget = QListWidget()
+        for tpl in self._templates:
+            cat = tpl.get("category", "General")
+            name = tpl.get("name", "Template")
+            n_steps = len(tpl.get("steps") or [])
+            self.list_widget.addItem(QListWidgetItem(f"[{cat}] {name} ({n_steps} steps)"))
+        self.list_widget.currentRowChanged.connect(self._on_select)
+        body.addWidget(self.list_widget, 5)
+
+        self.preview_box = QTextEdit()
+        self.preview_box.setReadOnly(True)
+        body.addWidget(self.preview_box, 6)
+        pl.addLayout(body, 1)
+
+        name_row = QHBoxLayout()
+        name_row.addWidget(QLabel("<b>Save As Name:</b>"))
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("Optional custom workflow name")
+        name_row.addWidget(self.name_input, 1)
+        pl.addLayout(name_row)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
+        install_btn = QPushButton("✦  Install Template")
+        install_btn.setCursor(Qt.PointingHandCursor)
+        install_btn.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 rgba(32,169,232,225), stop:1 rgba(23,85,165,232)); border: 1px solid #a0efff; font-weight: 700; border-radius: 12px; padding: 10px 14px;")
+        install_btn.clicked.connect(self._on_install)
+        btn_row.addWidget(install_btn)
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setCursor(Qt.PointingHandCursor)
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+        pl.addLayout(btn_row)
+
+        layout.addWidget(panel)
+        self.resize(680, 440)
+        if self._templates:
+            self.list_widget.setCurrentRow(0)
+
+    def _on_select(self, row: int):
+        if row < 0 or row >= len(self._templates):
+            return
+        tpl = self._templates[row]
+        self.name_input.setText(str(tpl.get("name", "")))
+        perms = tpl.get("required_permissions") or []
+        perm_str = html.escape(", ".join(perms)) if perms else "None (local safe tools only)"
+        steps_html = "".join(
+            f"<li><b>{i}. [{html.escape(str(s.get('action', '')))}]</b> — {html.escape(str(s.get('description', '')))}</li>"
+            for i, s in enumerate(tpl.get("steps") or [], 1)
+        )
+        self.preview_box.setHtml(
+            f"<h3 style='color:#7eeeff;margin:0 0 6px 0'>{html.escape(str(tpl.get('name', '')))}</h3>"
+            f"<p style='color:#c7e4f5;margin:0 0 8px 0'>{html.escape(str(tpl.get('summary', '')))}</p>"
+            f"<p style='color:#9be7c4;margin:0 0 10px 0'><b>Permission Gates:</b> {perm_str}</p>"
+            f"<ol style='margin:0;padding-left:18px;color:#eaf8ff'>{steps_html}</ol>"
+        )
+
+    def _on_install(self):
+        row = self.list_widget.currentRow()
+        if row < 0 or row >= len(self._templates):
+            return
+        self.selected_template_id = str(self._templates[row].get("template_id", ""))
+        self.custom_name = self.name_input.text().strip()
+        self.accept()
+
+
+class WorkflowDebuggerDialog(QDialog):
+    """Visual Workflow Debugger & Dry-Run Inspector with breakpoints and permission preflight."""
+
+    def __init__(self, workflow_dict: dict, debugger_cls, parent=None):
+        super().__init__(parent, Qt.Dialog | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self._wf_dict = dict(workflow_dict or {})
+        self._debugger_cls = debugger_cls
+        self._breakpoints: set[int] = set()
+        self._traces_by_step: dict[int, dict] = {}
+        self._next_step = 1
+        self.request_live_replay = False
+
+        from nova_workflows import Workflow, WorkflowStep
+        steps = [
+            WorkflowStep(
+                action=str(s.get("action", "")),
+                arguments=dict(s.get("arguments") or {}),
+                description=str(s.get("description", "")),
+                created_at=float(s.get("created_at") or 0.0),
+            )
+            for s in (self._wf_dict.get("steps") or [])
+        ]
+        self._workflow = Workflow(
+            workflow_id=str(self._wf_dict.get("workflow_id", "debug")),
+            name=str(self._wf_dict.get("name", "Untitled Workflow")),
+            created_at=float(self._wf_dict.get("created_at") or 0.0),
+            steps=steps,
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        panel = QFrame()
+        panel.setObjectName("panel")
+        panel.setStyleSheet("""
+            QFrame#panel {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 rgba(14, 42, 70, 245),
+                    stop:0.5 rgba(8, 28, 52, 250),
+                    stop:1 rgba(4, 16, 32, 255));
+                border: 1.5px solid rgba(80, 210, 255, 180);
+                border-radius: 20px;
+            }
+            QListWidget, QTextEdit {
+                background: rgba(6, 22, 42, 210);
+                border: 1px solid rgba(81, 190, 238, 135);
+                border-radius: 12px;
+                padding: 6px;
+                color: #eaf8ff;
+            }
+            QListWidget::item {
+                padding: 8px;
+                border-radius: 6px;
+                margin-bottom: 3px;
+            }
+            QListWidget::item:selected {
+                background: rgba(32, 145, 205, 165);
+                border: 1px solid #5efaff;
+            }
+        """)
+        pl = QVBoxLayout(panel)
+        pl.setContentsMargins(22, 20, 22, 20)
+        pl.setSpacing(10)
+
+        hdr = QLabel(f"Visual Workflow Debugger — {self._workflow.name}")
+        hdr.setStyleSheet("font-size: 13pt; font-weight: 700; color: #a5f1ff;")
+        pl.addWidget(hdr)
+
+        self.status_banner = QLabel("Ready for non-destructive Dry-Run simulation. Toggle breakpoints on any step.")
+        self.status_banner.setStyleSheet("color: #b4d8ea; font-size: 9.5pt;")
+        pl.addWidget(self.status_banner)
+
+        body = QHBoxLayout()
+        body.setSpacing(12)
+        self.step_list = QListWidget()
+        self.step_list.currentRowChanged.connect(self._render_inspector)
+        body.addWidget(self.step_list, 5)
+
+        self.inspector = QTextEdit()
+        self.inspector.setReadOnly(True)
+        body.addWidget(self.inspector, 6)
+        pl.addLayout(body, 1)
+
+        ctl_row = QHBoxLayout()
+        ctl_row.setSpacing(8)
+        run_btn = QPushButton("▶ Dry-Run / Continue")
+        run_btn.clicked.connect(self._run_dry)
+        step_btn = QPushButton("⏭ Step Next")
+        step_btn.clicked.connect(self._step_next)
+        bp_btn = QPushButton("● Toggle Breakpoint")
+        bp_btn.clicked.connect(self._toggle_breakpoint)
+        reset_btn = QPushButton("↻ Reset")
+        reset_btn.clicked.connect(self._reset_debug)
+        for b in (run_btn, step_btn, bp_btn, reset_btn):
+            b.setCursor(Qt.PointingHandCursor)
+            ctl_row.addWidget(b)
+        pl.addLayout(ctl_row)
+
+        bottom = QHBoxLayout()
+        bottom.setSpacing(10)
+        live_btn = QPushButton("▶  Replay Live (Per-Step Confirm)")
+        live_btn.setCursor(Qt.PointingHandCursor)
+        live_btn.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 rgba(32,169,232,225), stop:1 rgba(23,85,165,232)); border: 1px solid #a0efff; font-weight: 700; border-radius: 12px; padding: 10px 14px;")
+        live_btn.clicked.connect(self._on_replay_live)
+        bottom.addWidget(live_btn)
+
+        close_btn = QPushButton("Close")
+        close_btn.setCursor(Qt.PointingHandCursor)
+        close_btn.clicked.connect(self.reject)
+        bottom.addWidget(close_btn)
+        pl.addLayout(bottom)
+
+        layout.addWidget(panel)
+        self.resize(700, 460)
+        self._refresh_steps()
+
+    def _refresh_steps(self, select_row: int = 0):
+        self.step_list.clear()
+        icon_map = {
+            "verified": "✓",
+            "warning": "⚠",
+            "blocked": "✕",
+            "paused_breakpoint": "⏸",
+        }
+        for idx, step in enumerate(self._workflow.steps, 1):
+            tr = self._traces_by_step.get(idx)
+            icon = icon_map.get(tr["status"], "○") if tr else "○"
+            bp_mark = "● " if idx in self._breakpoints else "  "
+            self.step_list.addItem(QListWidgetItem(f"{bp_mark}{icon} {idx}. [{step.action}] {step.description}"))
+        if self._workflow.steps:
+            self.step_list.setCurrentRow(max(0, min(select_row, len(self._workflow.steps) - 1)))
+
+    def _render_inspector(self, row: int):
+        if row < 0 or row >= len(self._workflow.steps):
+            self.inspector.setHtml("<i>Select a step to inspect its arguments and permission gate.</i>")
+            return
+        idx = row + 1
+        step = self._workflow.steps[row]
+        tr = self._traces_by_step.get(idx)
+        status_str = html.escape(tr["status"].upper()) if tr else "PENDING"
+        msg_str = html.escape(str(tr["message"])) if tr else "Not yet simulated. Click Dry-Run or Step Next."
+        perm_str = html.escape(str((tr.get("required_permission") if tr else None) or "None"))
+        args_pretty = html.escape(json.dumps(step.arguments or {}, indent=2, ensure_ascii=False))
+        self.inspector.setHtml(
+            f"<h3 style='color:#7eeeff;margin:0 0 6px 0'>Step {idx}: {html.escape(str(step.action))}</h3>"
+            f"<p style='margin:0 0 6px 0'><b>Status:</b> <span style='color:#9be7c4'>{status_str}</span></p>"
+            f"<p style='margin:0 0 6px 0'><b>Permission Gate:</b> {perm_str}</p>"
+            f"<p style='margin:0 0 8px 0;color:#c7e4f5'>{msg_str}</p>"
+            f"<pre style='background:rgba(2,10,20,0.75);padding:8px;border-radius:8px;color:#aee8ff'>{args_pretty}</pre>"
+        )
+
+    def _toggle_breakpoint(self):
+        row = self.step_list.currentRow()
+        if row < 0:
+            return
+        idx = row + 1
+        if idx in self._breakpoints:
+            self._breakpoints.remove(idx)
+        else:
+            self._breakpoints.add(idx)
+        self._refresh_steps(row)
+
+    def _run_dry(self):
+        res = self._debugger_cls.dry_run(
+            self._workflow,
+            breakpoints=self._breakpoints,
+            start_step=self._next_step,
+        )
+        for tr in res.get("traces") or []:
+            self._traces_by_step[tr["step_index"]] = tr
+        if res.get("paused"):
+            self._next_step = int(res.get("next_step", 1))
+            self.status_banner.setText(f"Paused at breakpoint on step {self._next_step}. Click Dry-Run / Continue to resume.")
+            self._refresh_steps(self._next_step - 1)
+        elif not res.get("ok"):
+            blk = res.get("blocked_at", 1)
+            self.status_banner.setText(f"Blocked at step {blk} by fail-closed security check.")
+            self._refresh_steps(blk - 1)
+        else:
+            self._next_step = 1
+            self.status_banner.setText(f"Dry-Run complete: all {len(self._workflow.steps)} steps validated cleanly.")
+            self._refresh_steps(max(0, len(self._workflow.steps) - 1))
+
+    def _step_next(self):
+        if self._next_step > len(self._workflow.steps):
+            self._next_step = 1
+            self._traces_by_step.clear()
+        temp_bp = set(self._breakpoints)
+        if self._next_step < len(self._workflow.steps):
+            temp_bp.add(self._next_step + 1)
+        res = self._debugger_cls.dry_run(self._workflow, breakpoints=temp_bp, start_step=self._next_step)
+        for tr in res.get("traces") or []:
+            if tr["status"] != "paused_breakpoint":
+                self._traces_by_step[tr["step_index"]] = tr
+        cur = self._next_step
+        self._next_step = min(len(self._workflow.steps) + 1, self._next_step + 1)
+        self.status_banner.setText(f"Stepped through step {cur} of {len(self._workflow.steps)}.")
+        self._refresh_steps(cur - 1)
+
+    def _reset_debug(self):
+        self._traces_by_step.clear()
+        self._next_step = 1
+        self.status_banner.setText("Debugger reset. Ready for Dry-Run simulation.")
+        self._refresh_steps(0)
+
+    def _on_replay_live(self):
+        self.request_live_replay = True
         self.accept()

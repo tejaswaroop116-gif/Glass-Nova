@@ -60,6 +60,7 @@ from nova_workflows import (
     WorkflowStore,
     WorkflowPlayer,
     ALLOWLISTED_WORKFLOW_ACTIONS,
+    instantiate_template,
 )
 from nova_offline_ai import ConversationContextManager, OfflineCapabilityManager, OllamaClient
 from nova_local_knowledge import knowledge_store, local_knowledge_control, run_safe_python, search_local_files
@@ -2184,6 +2185,15 @@ class LiveManager:
                     wf_id = msg.get("workflow_id", "")
                     if wf_act == "replay":
                         threading.Thread(target=replay_saved_workflow, args=(wf_id,), daemon=True).start()
+                    elif wf_act == "install_template":
+                        tpl_id = str(msg.get("template_id") or wf_id).strip()
+                        try:
+                            wf_obj = instantiate_template(tpl_id, custom_name=wf_name or None)
+                            workflow_store.save(wf_obj)
+                            emit("log", text=f"[Workflow] Installed template '{wf_obj.name}' ({len(wf_obj.steps)} steps).")
+                        except Exception as exc:
+                            emit("log", text=f"[Workflow] Failed to install template '{tpl_id}': {exc}")
+                        _emit_workflows_sync()
                     elif wf_act == "update_steps":
                         # Allow editing/updating a saved workflow's name and steps from the review/edit UI
                         target_id = str(wf_id).strip()

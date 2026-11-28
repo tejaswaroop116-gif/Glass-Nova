@@ -16,12 +16,16 @@ from nova_local_knowledge import knowledge_store
 _UI_OLLAMA = OllamaClient()
 from nova_screen_pointing import RegionSelector, ScreenPointingService
 from nova_walkthrough import Walkthrough, WalkthroughStep, walkthrough_from_plan
-from nova_workflows import Workflow, WorkflowStep, WorkflowRecorder, WorkflowStore, WorkflowPlayer
+from nova_workflows import (
+    Workflow, WorkflowStep, WorkflowRecorder, WorkflowStore, WorkflowPlayer,
+    list_workflow_templates, instantiate_template, WorkflowDebugger,
+)
 
 from bot import DesktopBot, STATES, cl, ease, glow, gold, hl, lgrad, onyx, pearl, rgrad, st
 from ui_dialogs import (
     MicSensitivityWidget, MicWaveformCanvas, PermissionDialog,
     WalkthroughHighlightOverlay, WorkflowEditorDialog, WorkflowStepConfirmDialog,
+    WorkflowTemplatesDialog, WorkflowDebuggerDialog,
 )
 from ui_theme import (
     APP_NAME, BOT_NAMES, GlassRoot, MENU_CSS, NavPill, ORB, OrbWidget, ROOT,
@@ -488,6 +492,10 @@ class Nova(QMainWindow):
         wf_btns2.addWidget(self.button('🗑  Delete', self._ui_delete_workflow))
         wf_btns2.addWidget(self.button('↻  Refresh', self._ui_refresh_workflows))
         wf_v.addLayout(wf_btns2)
+        wf_btns3 = QHBoxLayout(); wf_btns3.setSpacing(6)
+        wf_btns3.addWidget(self.button('✦  Templates', self._ui_open_workflow_templates))
+        wf_btns3.addWidget(self.button('🪲  Debug / Dry-Run', self._ui_debug_workflow))
+        wf_v.addLayout(wf_btns3)
         bottom_row.addWidget(wf_p, 1)
 
         v.addLayout(bottom_row, 1)
@@ -1762,6 +1770,36 @@ class Nova(QMainWindow):
         )
         if ans == QMessageBox.Yes and self.ensure_backend():
             self.send_cmd(cmd='workflow_cmd', action='delete', workflow_id=wf.get('workflow_id'))
+
+    def _ui_open_workflow_templates(self):
+        dlg = WorkflowTemplatesDialog(list_workflow_templates(), self)
+        if dlg.exec() == QDialog.Accepted and dlg.selected_template_id:
+            if self.backend_running():
+                self.send_cmd(
+                    cmd='workflow_cmd',
+                    action='install_template',
+                    template_id=dlg.selected_template_id,
+                    name=dlg.custom_name,
+                )
+            else:
+                try:
+                    wf_dir = Path(os.environ.get('APPDATA') or Path.home()) / 'PC_Complete_Assistant' / 'workflows'
+                    store = WorkflowStore(wf_dir)
+                    wf_obj = instantiate_template(dlg.selected_template_id, custom_name=dlg.custom_name or None)
+                    store.save(wf_obj)
+                    self.append_log(f"[Workflow] Installed template '{wf_obj.name}'.")
+                    self._ui_refresh_workflows()
+                except Exception as exc:
+                    QMessageBox.warning(self, 'Template Install Error', str(exc))
+
+    def _ui_debug_workflow(self):
+        wf = self._pick_workflow_from_cache('Visual Workflow Debugger')
+        if not wf:
+            return
+        dlg = WorkflowDebuggerDialog(wf, WorkflowDebugger, self)
+        if dlg.exec() == QDialog.Accepted and dlg.request_live_replay:
+            if self.ensure_backend():
+                self.send_cmd(cmd='workflow_cmd', action='replay', workflow_id=wf.get('workflow_id'))
 
     def _on_workflow_step_request(self, ev: dict):
         req_id = ev.get('id')

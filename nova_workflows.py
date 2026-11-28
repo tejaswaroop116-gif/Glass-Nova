@@ -237,3 +237,288 @@ class WorkflowPlayer:
             except Exception as exc:
                 return {"ok": False, "error": str(exc), "failed_at": index, "results": results}
         return {"ok": True, "completed": len(results), "results": results}
+
+
+
+# =============================================================================
+# EXPANDED MULTI-STEP WORKFLOW TEMPLATES & VISUAL WORKFLOW DEBUGGER (DRY-RUN)
+# =============================================================================
+
+ACTION_PERMISSION_MAP: dict[str, Optional[str]] = {
+    "open_app": None,
+    "open_file": "file_read",
+    "open_url": "browser_action",
+    "search_web": "browser_action",
+    "play_youtube": "browser_action",
+    "open_folder": "file_read",
+    "system_status": None,
+    "volume_control": None,
+    "brightness_control": None,
+    "window_control": "mouse_keyboard",
+    "app_control": None,
+    "take_screenshot": "screen_view",
+    "write_in_notepad": "mouse_keyboard",
+    "click_ui_element": "mouse_keyboard",
+    "skip_youtube_ad": "browser_action",
+    "close_browser_tab": "browser_action",
+    "control_youtube_video": "browser_action",
+    "scroll_desktop": "mouse_keyboard",
+    "create_folder": "file_write",
+    "list_folder": "file_read",
+    "rename_file": "file_write",
+    "copy_file": "file_write",
+    "move_file": "file_write",
+    "delete_file": "file_delete",
+    "calculator_operation": None,
+    "write_text_file": "file_write",
+    "read_text_file": "file_read",
+    "look_at_screen": "screen_view",
+    "inspect_document": "file_read",
+    "inspect_video": "file_read",
+    "mic_sensitivity_control": None,
+}
+
+
+@dataclass(frozen=True)
+class WorkflowTemplate:
+    template_id: str
+    name: str
+    category: str
+    summary: str
+    steps: tuple[dict[str, Any], ...]
+
+
+WORKFLOW_TEMPLATES: tuple[WorkflowTemplate, ...] = (
+    WorkflowTemplate(
+        template_id="morning_workspace",
+        name="Morning Workspace Setup",
+        category="Productivity",
+        summary="Check PC health, set comfortable volume, open Notepad for daily priorities, and launch your workspace.",
+        steps=(
+            {"action": "system_status", "arguments": {}, "description": "Check CPU, RAM, battery, and disk health"},
+            {"action": "volume_control", "arguments": {"level": 40}, "description": "Set system volume to 40%"},
+            {"action": "open_app", "arguments": {"app_name": "notepad"}, "description": "Open Notepad for daily tasks"},
+            {"action": "open_url", "arguments": {"url": "https://calendar.google.com"}, "description": "Open calendar in browser"},
+        ),
+    ),
+    WorkflowTemplate(
+        template_id="focus_quiet_mode",
+        name="Deep Focus & Quiet Mode",
+        category="Focus",
+        summary="Lower audio distractions, tune display brightness, calibrate microphone sensitivity, and report system status.",
+        steps=(
+            {"action": "volume_control", "arguments": {"action": "mute"}, "description": "Mute system audio for focus"},
+            {"action": "brightness_control", "arguments": {"level": 65}, "description": "Set screen brightness to comfortable 65%"},
+            {"action": "mic_sensitivity_control", "arguments": {"mode": "auto"}, "description": "Enable AUTO NEAREST mic noise gate"},
+            {"action": "system_status", "arguments": {}, "description": "Confirm clean background system load"},
+        ),
+    ),
+    WorkflowTemplate(
+        template_id="study_lecture_capture",
+        name="Study & Lecture Capture",
+        category="Study",
+        summary="Capture the current slide or lecture window, inspect visible content, and open Notepad for structured notes.",
+        steps=(
+            {"action": "take_screenshot", "arguments": {}, "description": "Capture current lecture slide screenshot"},
+            {"action": "look_at_screen", "arguments": {"question": "Summarize the key points visible on this slide."}, "description": "Analyze visible lecture content"},
+            {"action": "open_app", "arguments": {"app_name": "notepad"}, "description": "Open Notepad for study notes"},
+        ),
+    ),
+    WorkflowTemplate(
+        template_id="system_health_check",
+        name="System Health Snapshot",
+        category="Diagnostics",
+        summary="Run a quick local diagnostic: check system metrics, list recent Downloads, and capture a status screenshot.",
+        steps=(
+            {"action": "system_status", "arguments": {}, "description": "Inspect CPU, memory, and battery status"},
+            {"action": "list_folder", "arguments": {"path": "Downloads"}, "description": "List files in Downloads folder"},
+            {"action": "take_screenshot", "arguments": {}, "description": "Save a visual desktop snapshot"},
+        ),
+    ),
+    WorkflowTemplate(
+        template_id="quick_web_research",
+        name="Quick Web Research Brief",
+        category="Research",
+        summary="Search the web for a topic and open Notepad ready to collect notes.",
+        steps=(
+            {"action": "search_web", "arguments": {"query": "Python PySide6 latest release notes"}, "description": "Search the web for your research topic"},
+            {"action": "open_app", "arguments": {"app_name": "notepad"}, "description": "Open Notepad to draft research notes"},
+        ),
+    ),
+    WorkflowTemplate(
+        template_id="media_break_youtube",
+        name="Media Break & Lo-Fi Setup",
+        category="Media",
+        summary="Set listening volume and launch ambient music on YouTube.",
+        steps=(
+            {"action": "volume_control", "arguments": {"level": 50}, "description": "Set comfortable listening volume (50%)"},
+            {"action": "play_youtube", "arguments": {"query": "lofi hip hop radio beats to relax study to"}, "description": "Play ambient study music on YouTube"},
+        ),
+    ),
+)
+
+
+def list_workflow_templates() -> list[dict[str, Any]]:
+    """Return serializable metadata and steps for all built-in curated workflow templates."""
+    out: list[dict[str, Any]] = []
+    for tpl in WORKFLOW_TEMPLATES:
+        perms = sorted({
+            p for s in tpl.steps
+            for p in (ACTION_PERMISSION_MAP.get(s["action"]),)
+            if p
+        })
+        out.append({
+            "template_id": tpl.template_id,
+            "name": tpl.name,
+            "category": tpl.category,
+            "summary": tpl.summary,
+            "required_permissions": perms,
+            "steps": [dict(s) for s in tpl.steps],
+        })
+    return out
+
+
+def instantiate_template(template_id: str, custom_name: Optional[str] = None) -> Workflow:
+    """Create a validated Workflow instance from a built-in template ID."""
+    tid = str(template_id or "").strip()
+    match = next((t for t in WORKFLOW_TEMPLATES if t.template_id == tid), None)
+    if match is None:
+        raise ValueError(f"Unknown workflow template '{tid}'.")
+
+    now = time.time()
+    steps: list[WorkflowStep] = []
+    for raw in match.steps:
+        act = str(raw.get("action", "")).strip()
+        args = dict(raw.get("arguments") or {})
+        desc = str(raw.get("description") or act)
+        if act not in ALLOWLISTED_WORKFLOW_ACTIONS:
+            raise ValueError(f"Template '{tid}' contains disallowed action '{act}'.")
+        if _contains_sensitive_data(args, desc):
+            raise ValueError(f"Template '{tid}' step '{act}' contains sensitive data.")
+        steps.append(WorkflowStep(action=act, arguments=args, description=desc, created_at=now))
+
+    final_name = (custom_name or match.name).strip()[:100] or match.name
+    return Workflow(
+        workflow_id=str(uuid.uuid4()),
+        name=final_name,
+        created_at=now,
+        steps=steps,
+        version=1,
+    )
+
+
+@dataclass
+class WorkflowDebugTrace:
+    step_index: int
+    action: str
+    description: str
+    arguments: dict[str, Any]
+    required_permission: Optional[str]
+    status: str  # "verified", "warning", "blocked", "paused_breakpoint"
+    message: str
+    duration_ms: float = 0.0
+
+
+class WorkflowDebugger:
+    """Preflight validator & non-destructive Dry-Run visual debugger for semantic workflows."""
+
+    @staticmethod
+    def preflight_validate(workflow: Workflow) -> list[WorkflowDebugTrace]:
+        """Validate every step against allow-list, secret hygiene, and permission requirements."""
+        traces: list[WorkflowDebugTrace] = []
+        for idx, step in enumerate(workflow.steps, start=1):
+            t0 = time.perf_counter()
+            act = str(step.action or "").strip()
+            args = dict(step.arguments) if isinstance(step.arguments, dict) else {}
+            desc = str(step.description or "")
+            perm = ACTION_PERMISSION_MAP.get(act)
+
+            if act not in ALLOWLISTED_WORKFLOW_ACTIONS:
+                status = "blocked"
+                msg = f"Action '{act}' is not in ALLOWLISTED_WORKFLOW_ACTIONS."
+            elif _contains_sensitive_data(args, desc):
+                status = "blocked"
+                msg = "Step appears to contain sensitive credentials/secrets and is blocked."
+            elif perm in ("file_delete", "form_purchase", "continuous_screen"):
+                status = "warning"
+                msg = f"High-impact step: requires explicit UI button click for '{perm}'."
+            else:
+                perm_note = f"Requires '{perm}' permission" if perm else "No privileged permission required"
+                status = "verified"
+                msg = f"Preflight OK · {perm_note}."
+
+            dt_ms = round((time.perf_counter() - t0) * 1000.0, 3)
+            traces.append(
+                WorkflowDebugTrace(
+                    step_index=idx,
+                    action=act,
+                    description=desc,
+                    arguments=args,
+                    required_permission=perm,
+                    status=status,
+                    message=msg,
+                    duration_ms=dt_ms,
+                )
+            )
+        return traces
+
+    @classmethod
+    def dry_run(
+        cls,
+        workflow: Workflow,
+        breakpoints: Optional[set[int]] = None,
+        start_step: int = 1,
+        on_trace: Optional[Callable[[WorkflowDebugTrace], None]] = None,
+    ) -> dict[str, Any]:
+        """Simulate workflow execution without invoking real OS actions.
+
+        Pauses cleanly if a 1-based step index is in `breakpoints` (after `start_step`),
+        or stops if a step is `blocked` by allow-list / secret hygiene checks.
+        """
+        bp = set(breakpoints or ())
+        preflight = cls.preflight_validate(workflow)
+        traces: list[WorkflowDebugTrace] = []
+
+        for item in preflight:
+            if item.step_index < start_step:
+                continue
+            if item.step_index in bp and item.step_index > start_step:
+                paused = WorkflowDebugTrace(
+                    step_index=item.step_index,
+                    action=item.action,
+                    description=item.description,
+                    arguments=item.arguments,
+                    required_permission=item.required_permission,
+                    status="paused_breakpoint",
+                    message=f"Paused at breakpoint before step {item.step_index} ({item.action}).",
+                    duration_ms=item.duration_ms,
+                )
+                traces.append(paused)
+                if on_trace:
+                    on_trace(paused)
+                return {
+                    "ok": True,
+                    "paused": True,
+                    "paused_at": item.step_index,
+                    "next_step": item.step_index,
+                    "traces": [asdict(t) for t in traces],
+                }
+
+            traces.append(item)
+            if on_trace:
+                on_trace(item)
+
+            if item.status == "blocked":
+                return {
+                    "ok": False,
+                    "paused": False,
+                    "blocked_at": item.step_index,
+                    "traces": [asdict(t) for t in traces],
+                }
+
+        return {
+            "ok": True,
+            "paused": False,
+            "completed": len(traces),
+            "traces": [asdict(t) for t in traces],
+        }
