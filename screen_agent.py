@@ -5,6 +5,7 @@ providing UI element identification, error diagnostics, and content explanation.
 All operations check permission_manager first.
 """
 import os, io, time
+import sys
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 from PIL import Image, ImageGrab, ImageChops
@@ -14,8 +15,13 @@ from google.genai import types
 
 from permissions import permissions
 
-ROOT = Path(__file__).resolve().parent
-load_dotenv(ROOT / ".env")
+ROOT = (
+    Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent
+)
+load_dotenv(Path(os.environ.get("APPDATA") or Path.home()) / "PC_Complete_Assistant" / ".env", override=False)
+load_dotenv(ROOT / ".env", override=False)
 API_KEY = os.getenv("GEMINI_API_KEY")
 VISION_MODEL = os.getenv("VISION_MODEL", "gemini-3.5-flash")
 

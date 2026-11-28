@@ -5,6 +5,7 @@ and interact with buttons, menus, text fields, and applications.
 All actions check mouse_keyboard and sensitive permissions, with verification of results.
 """
 import os, time, re, json
+import sys
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 import pyautogui
@@ -28,8 +29,13 @@ from screen_agent import (
 
 ensure_dpi_awareness()
 
-ROOT = Path(__file__).resolve().parent
-load_dotenv(ROOT / ".env")
+ROOT = (
+    Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent
+)
+load_dotenv(Path(os.environ.get("APPDATA") or Path.home()) / "PC_Complete_Assistant" / ".env", override=False)
+load_dotenv(ROOT / ".env", override=False)
 pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 0.08
 

@@ -220,6 +220,7 @@ class Nova(QMainWindow):
         self.lifecycle.register('companions', stop_fn=self._close_all_companions, priority=30)
         self.lifecycle.register('backend', stop_fn=self.shutdown_backend, priority=40)
         self.lifecycle.register('wake_listener', stop_fn=lambda: self.wake_listener.stop() if getattr(self, 'wake_listener', None) else None, priority=50)
+        self.lifecycle.register('update_worker', stop_fn=self._stop_update_worker, priority=55)
         self.lifecycle.register('overlays_and_dialogs', stop_fn=self._close_overlays_and_dialogs, priority=60)
         self.lifecycle.register('hotkeys', stop_fn=self._unregister_win32_global_hotkeys, priority=70)
         self.lifecycle.start_all()
@@ -1848,7 +1849,8 @@ class Nova(QMainWindow):
 
     # -- Safe In-App Update Checker (background thread, never auto-executes)
     def _ui_check_for_updates(self):
-        if getattr(self, '_update_worker', None) is not None and self._update_worker.isRunning():
+        existing = getattr(self, '_update_worker', None)
+        if existing is not None and existing.isRunning():
             return
         self.update_check_btn.setEnabled(False)
         self.update_status_lbl.setStyleSheet('color: #a5f1ff;')
@@ -1858,11 +1860,36 @@ class Nova(QMainWindow):
             finished_result = Signal(object)
 
             def run(self):
-                self.finished_result.emit(check_for_updates(APP_VERSION))
+                res = check_for_updates(APP_VERSION)
+                if not self.isInterruptionRequested():
+                    self.finished_result.emit(res)
 
-        self._update_worker = _UpdateWorker(self)
-        self._update_worker.finished_result.connect(self._apply_update_check_result)
-        self._update_worker.start()
+        worker = _UpdateWorker()
+        self._update_worker = worker
+        worker.finished_result.connect(self._apply_update_check_result)
+        worker.finished.connect(lambda w=worker: self._on_update_worker_finished(w))
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def _on_update_worker_finished(self, worker):
+        if getattr(self, '_update_worker', None) is worker:
+            self._update_worker = None
+
+    def _stop_update_worker(self):
+        worker = getattr(self, '_update_worker', None)
+        if worker is None:
+            return
+        self._update_worker = None
+        try:
+            worker.finished_result.disconnect(self._apply_update_check_result)
+        except Exception:
+            pass
+        try:
+            worker.requestInterruption()
+            if worker.isRunning():
+                worker.wait(350)
+        except Exception:
+            pass
 
     def _apply_update_check_result(self, result: UpdateCheckResult):
         self.update_check_btn.setEnabled(True)

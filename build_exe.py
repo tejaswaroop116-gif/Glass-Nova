@@ -62,6 +62,16 @@ EXCLUDE_MODULES = [
     "notebook",
 ]
 
+# Native binaries & data required at runtime by Vosk (libvosk.dll), sounddevice (PortAudio), and MediaPipe
+COLLECT_BINARIES = [
+    "vosk",
+    "sounddevice",
+]
+
+COLLECT_DATA = [
+    "mediapipe",
+]
+
 
 def collect_data_entries() -> list[str]:
     candidates = [
@@ -93,6 +103,10 @@ def build_command() -> list[str]:
         cmd.extend(["--add-data", entry])
     for mod in HIDDEN_IMPORTS:
         cmd.extend(["--hidden-import", mod])
+    for pkg in COLLECT_BINARIES:
+        cmd.extend(["--collect-binaries", pkg])
+    for pkg in COLLECT_DATA:
+        cmd.extend(["--collect-data", pkg])
     for excl in EXCLUDE_MODULES:
         cmd.extend(["--exclude-module", excl])
     cmd.append(str(ROOT / "ui.py"))

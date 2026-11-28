@@ -30,13 +30,18 @@ from __future__ import annotations
 import math
 import random
 import time
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QPoint, Signal, QEvent
 from PySide6.QtGui import QPainter, QPixmap, QCursor, QGuiApplication
 from PySide6.QtWidgets import QWidget, QMenu
 
-ROOT = Path(__file__).resolve().parent
+ROOT = (
+    Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent
+)
 ASSET_DIR = ROOT / "assets" / "nova_pet"
 
 

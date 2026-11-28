@@ -5,6 +5,7 @@ import operator
 import os
 import re
 import time
+import sys
 from pathlib import Path
 
 from tools_state import WORKSPACE, _check_perm, _err, _ok
@@ -103,8 +104,16 @@ def _is_protected_path(p: Path) -> str:
     appdata_low = str(Path(os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming")).resolve()).lower().rstrip("\\/")
     localapp_low = str(Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local")).resolve()).lower().rstrip("\\/")
     app_root_low = str(Path(__file__).resolve().parent).lower().rstrip("\\/")
+    protected_roots = {home_low, "c:\\users", appdata_low, localapp_low, app_root_low}
+    if getattr(sys, "frozen", False):
+        exe_dir_low = str(Path(sys.executable).resolve().parent).lower().rstrip("\\/")
+        meipass_low = str(Path(getattr(sys, "_MEIPASS", exe_dir_low)).resolve()).lower().rstrip("\\/")
+        protected_roots.add(exe_dir_low)
+        protected_roots.add(meipass_low)
+        if low == exe_dir_low or low.startswith(exe_dir_low + "\\"):
+            return f"Refusing operation inside Glass Nova installation directory '{resolved}'."
 
-    if low in (home_low, "c:\\users", appdata_low, localapp_low, app_root_low):
+    if low in protected_roots:
         return f"Refusing operation on protected root directory '{resolved}'."
 
     protected_prefixes = (

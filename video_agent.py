@@ -5,6 +5,7 @@ Uses Gemini multimodal vision for conceptual summaries and visual breakdown.
 Checks media_access permissions before inspecting media content.
 """
 import os, io, time
+import sys
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from PIL import Image, ImageGrab
@@ -15,8 +16,13 @@ from google.genai import types
 from permissions import permissions
 from screen_agent import get_active_window_title
 
-ROOT = Path(__file__).resolve().parent
-load_dotenv(ROOT / ".env")
+ROOT = (
+    Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent
+)
+load_dotenv(Path(os.environ.get("APPDATA") or Path.home()) / "PC_Complete_Assistant" / ".env", override=False)
+load_dotenv(ROOT / ".env", override=False)
 VISION_MODEL = os.getenv("VISION_MODEL", "gemini-3.5-flash")
 
 _client = None

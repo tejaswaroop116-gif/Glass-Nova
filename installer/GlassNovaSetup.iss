@@ -55,7 +55,6 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 ; Package only the verified PyInstaller runtime output (excludes dev files, tests, caches, .env)
-Source: "{#SourceDistDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDistDir}\*"; DestDir: "{app}"; Excludes: ".env,*.pyc,__pycache__\*,test_*.py"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
@@ -77,8 +76,11 @@ var
 begin
   if CurUninstallStep = usPostUninstall then
   begin
+    { Remove stale Start-with-Windows registry entry on uninstall (never touched during upgrades) }
+    RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'GlassNova');
+
     UserDataDir := ExpandConstant('{userappdata}\PC_Complete_Assistant');
-    if DirExists(UserDataDir) then
+    if (not UninstallSilent) and DirExists(UserDataDir) then
     begin
       if MsgBox(
         'Do you also want to remove your personal Glass Nova data (settings, workflows, tasks, memories, and .env API key) stored in:' + #13#10 +

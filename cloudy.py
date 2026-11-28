@@ -38,6 +38,7 @@ import math
 import random
 import time
 import socket
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QPoint, QEvent, QTimer
@@ -117,7 +118,12 @@ class CloudyWidget(PetWidget):
             self.follow_cursor = str(settings.value("cloudy_follow", "true")).lower() != "false"
         self.resize(round(self.BASE_W * self.cloudy_scale), round(self.BASE_H * self.cloudy_scale))
 
-        assets = Path(__file__).resolve().parent / "assets" / "cloudy"
+        base_dir = (
+            Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+            if getattr(sys, "frozen", False)
+            else Path(__file__).resolve().parent
+        )
+        assets = base_dir / "assets" / "cloudy"
         self.frames = {}
         for i in range(1, self.TOTAL_FRAMES + 1):
             pix = QPixmap(str(assets / "frames" / f"frame_{i:03d}.png"))

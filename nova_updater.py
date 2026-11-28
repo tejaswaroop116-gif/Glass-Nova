@@ -125,7 +125,7 @@ def is_trusted_release_url(url: str) -> bool:
     path_low = (parsed.path or "").lower()
     if not (
         path_low == f"/{GITHUB_OWNER.lower()}/{GITHUB_REPO.lower()}/releases"
-        or path_low.startswith(f"{OFFICIAL_REPO_PREFIX}releases")
+        or path_low.startswith(f"{OFFICIAL_REPO_PREFIX}releases/")
     ):
         return False
     if ".." in parsed.path or any(c in raw for c in ("\r", "\n", " ", "\"", "'", "<", ">")):
