@@ -21,6 +21,8 @@ from nova_updater import (
     RELEASES_PAGE_URL,
     DownloadResult,
     UpdateCheckResult,
+    _MAX_INSTALLER_BYTES,
+    _SafeGitHubRedirectHandler,
     build_installer_launch_args,
     check_for_updates,
     cleanup_stale_update_files,
@@ -249,11 +251,13 @@ class PackagingAndInstallerConfigTests(unittest.TestCase):
             _ui_check_for_updates = ui.Nova._ui_check_for_updates
             _on_update_worker_finished = ui.Nova._on_update_worker_finished
             _stop_update_worker = ui.Nova._stop_update_worker
+            _retire_running_worker = ui.Nova._retire_running_worker
             _apply_update_check_result = ui.Nova._apply_update_check_result
 
             def __init__(self):
                 self._latest_update_url = RELEASES_PAGE_URL
                 self._update_worker = None
+                self._retired_workers = []
                 self.update_check_btn = QPushButton("Check")
                 self.update_open_btn = QPushButton("Open")
                 self.update_status_lbl = QLabel("")
@@ -662,6 +666,9 @@ class OneClickUpdaterUiTests(unittest.TestCase):
             _ui_cancel_download = ui.Nova._ui_cancel_download
             _on_download_worker_finished = ui.Nova._on_download_worker_finished
             _stop_download_worker = ui.Nova._stop_download_worker
+            _retire_running_worker = ui.Nova._retire_running_worker
+            _set_active_download_resp = ui.Nova._set_active_download_resp
+            _close_active_download_resp = ui.Nova._close_active_download_resp
             _apply_download_result = ui.Nova._apply_download_result
             _ui_install_downloaded_update = ui.Nova._ui_install_downloaded_update
 
@@ -672,6 +679,9 @@ class OneClickUpdaterUiTests(unittest.TestCase):
                 self._update_worker = None
                 self._download_worker = None
                 self._download_cancel_evt = None
+                self._active_download_resp = None
+                self._active_download_resp_lock = threading.Lock()
+                self._retired_workers = []
                 self.update_check_btn = QPushButton("Check")
                 self.update_download_btn = QPushButton("Download Update")
                 self.update_download_btn.setVisible(False)
@@ -758,7 +768,7 @@ class OneClickUpdaterUiTests(unittest.TestCase):
         # Background download worker duplicate guard + clean stop
         release_evt = threading.Event()
 
-        def fake_dl(_upd, on_progress=None, is_cancelled=None):
+        def fake_dl(_upd, on_progress=None, is_cancelled=None, **_kw):
             release_evt.wait(timeout=1.5)
             return DownloadResult(status="cancelled", message="Download cancelled.")
 
@@ -776,6 +786,233 @@ class OneClickUpdaterUiTests(unittest.TestCase):
             w1.wait(1000)
 
         app.processEvents()
+
+    def test_install_launch_failure_recovers_ui_buttons_without_recheck(self):
+        app, ui, host = self._build_ui_host()
+        from PySide6.QtWidgets import QMessageBox
+
+        update = UpdateCheckResult(
+            status="update_available",
+            current_version="1.1.0-beta",
+            latest_version="v1.2.0",
+            release_url="https://github.com/tejaswaroop30/Glass-Nova/releases/tag/v1.2.0",
+            asset_name="GlassNova-Setup-1.2.0.exe",
+            asset_size=1024,
+            asset_download_url="https://github.com/tejaswaroop30/Glass-Nova/releases/download/v1.2.0/GlassNova-Setup-1.2.0.exe",
+            asset_sha256="A" * 64,
+        )
+        host._apply_update_check_result(update)
+        verified_dl = DownloadResult(
+            status="verified",
+            file_path=r"C:\Temp\GlassNova\updates\GlassNova-Setup-1.2.0.exe",
+            size_bytes=1024,
+            sha256="A" * 64,
+            verified=True,
+            message="Download verified.",
+        )
+        host._apply_download_result(verified_dl)
+        self.assertFalse(host.update_download_btn.isEnabled())
+        self.assertTrue(host.update_install_btn.isEnabled())
+
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.Yes), \
+             patch.object(QMessageBox, "warning") as mock_warn, \
+             patch.object(ui, "launch_verified_installer", return_value=(False, "Pre-launch verification failed")):
+            host._ui_install_downloaded_update()
+
+        self.assertIsNone(host._verified_download)
+        self.assertFalse(host.quit_called)
+        self.assertFalse(host.update_install_btn.isEnabled())
+        self.assertTrue(host.update_download_btn.isEnabled())
+        self.assertTrue(host.update_check_btn.isEnabled())
+        self.assertIn("Retry Download", host.update_download_btn.text())
+        mock_warn.assert_called_once()
+        app.processEvents()
+
+    def test_worker_shutdown_retains_blocked_worker_and_closes_active_response(self):
+        app, ui, host = self._build_ui_host()
+
+        update = UpdateCheckResult(
+            status="update_available",
+            current_version="1.1.0-beta",
+            latest_version="v1.2.0",
+            release_url="https://github.com/tejaswaroop30/Glass-Nova/releases/tag/v1.2.0",
+            asset_name="GlassNova-Setup-1.2.0.exe",
+            asset_size=1024,
+            asset_download_url="https://github.com/tejaswaroop30/Glass-Nova/releases/download/v1.2.0/GlassNova-Setup-1.2.0.exe",
+            asset_sha256="A" * 64,
+        )
+        host._apply_update_check_result(update)
+
+        started_evt = threading.Event()
+        release_evt = threading.Event()
+        closed_flag = {"closed": False}
+
+        class _FakeResp:
+            def close(self):
+                closed_flag["closed"] = True
+
+        def slow_dl(_upd, on_progress=None, is_cancelled=None, on_response_open=None):
+            if on_response_open:
+                on_response_open(_FakeResp())
+            started_evt.set()
+            # Deliberately block longer than wait(500) so _retire_running_worker is exercised
+            release_evt.wait(timeout=3.0)
+            if on_response_open:
+                on_response_open(None)
+            return DownloadResult(status="cancelled", message="Cancelled")
+
+        with patch.object(ui, "download_update_installer", side_effect=slow_dl):
+            host._ui_download_update()
+            worker = host._download_worker
+            self.assertTrue(started_evt.wait(timeout=1.5))
+            # Stop while worker is still blocked -> closes active resp AND retains worker in _retired_workers
+            host._stop_download_worker()
+            self.assertTrue(closed_flag["closed"])
+            self.assertIsNone(host._download_worker)
+            self.assertIn(worker, host._retired_workers)
+            # Now unblock the worker and let Qt process its finished signal
+            release_evt.set()
+            worker.wait(1500)
+            app.processEvents()
+            self.assertNotIn(worker, host._retired_workers)
+
+
+class ReviewHardeningTests(unittest.TestCase):
+    def test_redirect_handler_blocks_untrusted_hosts_and_allows_github_cdn(self):
+        from urllib.request import Request
+        handler = _SafeGitHubRedirectHandler()
+        orig_req = Request(
+            "https://github.com/tejaswaroop30/Glass-Nova/releases/download/v1.2.0/GlassNova-Setup-1.2.0.exe"
+        )
+
+        # Untrusted redirect host must raise URLError
+        with self.assertRaises(URLError):
+            handler.redirect_request(orig_req, None, 302, "Found", {}, "https://evil.example.com/malware.exe")
+
+        # HTTP downgrade must raise URLError
+        with self.assertRaises(URLError):
+            handler.redirect_request(orig_req, None, 302, "Found", {}, "http://objects.githubusercontent.com/file")
+
+        # Official GitHub asset CDN must be allowed
+        redir_req = handler.redirect_request(
+            orig_req, None, 302, "Found", {}, "https://objects.githubusercontent.com/github-production-release-asset/123"
+        )
+        self.assertEqual(
+            redir_req.full_url,
+            "https://objects.githubusercontent.com/github-production-release-asset/123",
+        )
+
+    def test_oversized_download_rejected_via_content_length_and_streaming(self):
+        base_url = "https://github.com/tejaswaroop30/Glass-Nova/releases/download/v1.2.0/GlassNova-Setup-1.2.0.exe"
+        upd = UpdateCheckResult(
+            status="update_available",
+            current_version="1.1.0-beta",
+            latest_version="v1.2.0",
+            asset_name="GlassNova-Setup-1.2.0.exe",
+            asset_size=0,
+            asset_download_url=base_url,
+            asset_sha256="A" * 64,
+        )
+
+        # 1. Oversized Content-Length header rejected immediately
+        class _HugeHeaderResp(io.BytesIO):
+            headers = {"Content-Length": str(_MAX_INSTALLER_BYTES + 1)}
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_dir = Path(tmp) / "updates"
+            temp_dir.mkdir()
+            with patch("nova_updater.get_update_temp_dir", return_value=temp_dir), \
+                 patch("nova_updater.build_opener") as mock_opener:
+                mock_opener.return_value.open.return_value = _HugeHeaderResp(b"MZ")
+                res = download_update_installer(upd)
+            self.assertEqual(res.status, "error")
+            self.assertIn("safety limit", res.message.lower())
+            self.assertEqual(list(temp_dir.glob("*")), [])
+
+        # 2. Oversized streaming response (no Content-Length) rejected mid-stream & cleans .part
+        class _StreamingResp(io.BytesIO):
+            headers = {}
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_dir = Path(tmp) / "updates"
+            temp_dir.mkdir()
+            with patch("nova_updater.get_update_temp_dir", return_value=temp_dir), \
+                 patch("nova_updater._MAX_INSTALLER_BYTES", 1024), \
+                 patch("nova_updater.build_opener") as mock_opener:
+                mock_opener.return_value.open.return_value = _StreamingResp(b"MZ" + b"X" * 2048)
+                res_stream = download_update_installer(upd)
+            self.assertEqual(res_stream.status, "error")
+            self.assertIn("maximum safe size", res_stream.message.lower())
+            self.assertEqual(list(temp_dir.glob("*")), [])
+
+    def test_symlink_and_path_confinement_rejected_before_hashing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_dir = Path(tmp) / "updates"
+            temp_dir.mkdir()
+            outside = Path(tmp) / "outside.exe"
+            outside.write_bytes(b"MZ_OUTSIDE")
+
+            # Outside path rejected before verify_installer_file is ever called
+            outside_dl = DownloadResult(
+                status="verified",
+                file_path=str(outside),
+                size_bytes=10,
+                sha256="A" * 64,
+                verified=True,
+            )
+            with patch("nova_updater.get_update_temp_dir", return_value=temp_dir), \
+                 patch("nova_updater.verify_installer_file") as mock_verify:
+                ok, msg = launch_verified_installer(outside_dl)
+                self.assertFalse(ok)
+                self.assertIn("temporary update directory", msg.lower())
+                mock_verify.assert_not_called()
+
+            # Symlinked installer path rejected before verify_installer_file is ever called
+            fake_link = temp_dir / "GlassNova-Setup-1.2.0.exe"
+            fake_link.write_bytes(b"MZ_LINK")
+            link_dl = DownloadResult(
+                status="verified",
+                file_path=str(fake_link),
+                size_bytes=7,
+                sha256="A" * 64,
+                verified=True,
+            )
+            with patch("nova_updater.get_update_temp_dir", return_value=temp_dir), \
+                 patch.object(Path, "is_symlink", return_value=True), \
+                 patch("nova_updater.verify_installer_file") as mock_verify:
+                ok2, msg2 = launch_verified_installer(link_dl)
+                self.assertFalse(ok2)
+                self.assertIn("symlink", msg2.lower())
+                mock_verify.assert_not_called()
+
+    def test_release_notes_sha256_fallback_avoids_wrong_asset_hash(self):
+        zip_hash = "1" * 64
+        exe_hash = "2" * 64
+        base_url = "https://github.com/tejaswaroop30/Glass-Nova/releases/download/v1.2.0/GlassNova-Setup-1.2.0.exe"
+
+        # 1. Body lists checksum only for a different .zip asset -> must NOT assign it to .exe
+        payload_other = {
+            "tag_name": "v1.2.0",
+            "html_url": "https://github.com/tejaswaroop30/Glass-Nova/releases/tag/v1.2.0",
+            "body": f"GlassNova-Portable-1.2.0.zip SHA-256: {zip_hash}\n",
+            "assets": [{"name": "GlassNova-Setup-1.2.0.exe", "size": 1024, "browser_download_url": base_url}],
+        }
+        res_other = parse_github_release_payload(payload_other, current_version="1.1.0-beta")
+        self.assertEqual(res_other.asset_sha256, "")
+
+        # 2. Body lists checksums for both .zip and .exe -> selects exact .exe checksum
+        payload_both = {
+            "tag_name": "v1.2.0",
+            "html_url": "https://github.com/tejaswaroop30/Glass-Nova/releases/tag/v1.2.0",
+            "body": f"GlassNova-Portable-1.2.0.zip SHA-256: {zip_hash}\nGlassNova-Setup-1.2.0.exe SHA-256: {exe_hash}\n",
+            "assets": [{"name": "GlassNova-Setup-1.2.0.exe", "size": 1024, "browser_download_url": base_url}],
+        }
+        res_both = parse_github_release_payload(payload_both, current_version="1.1.0-beta")
+        self.assertEqual(res_both.asset_sha256, exe_hash)
 
 
 if __name__ == "__main__":

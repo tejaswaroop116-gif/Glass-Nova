@@ -599,6 +599,9 @@ class Nova(QMainWindow):
         self._verified_download = None
         self._download_worker = None
         self._download_cancel_evt = None
+        self._active_download_resp = None
+        self._active_download_resp_lock = threading.Lock()
+        self._retired_workers = []
 
         self.update_version_lbl = QLabel(f'Installed Version: v{APP_VERSION.lstrip("vV")}')
         self.update_version_lbl.setStyleSheet('font-weight: 600; color: #a5f1ff;')
@@ -1905,6 +1908,50 @@ class Nova(QMainWindow):
         if getattr(self, '_update_worker', None) is worker:
             self._update_worker = None
 
+    def _retire_running_worker(self, worker):
+        """Retain a reference to any still-running QThread until it finishes so Qt never destroys it mid-run."""
+        if worker is None:
+            return
+        retired = getattr(self, '_retired_workers', None)
+        if retired is None:
+            retired = []
+            self._retired_workers = retired
+        if worker not in retired:
+            retired.append(worker)
+            def _cleanup(w=worker):
+                try:
+                    if w in retired:
+                        retired.remove(w)
+                except Exception:
+                    pass
+            try:
+                worker.finished.connect(_cleanup)
+            except Exception:
+                pass
+
+    def _set_active_download_resp(self, resp):
+        lock = getattr(self, '_active_download_resp_lock', None)
+        if lock is not None:
+            with lock:
+                self._active_download_resp = resp
+        else:
+            self._active_download_resp = resp
+
+    def _close_active_download_resp(self):
+        lock = getattr(self, '_active_download_resp_lock', None)
+        if lock is not None:
+            with lock:
+                resp = getattr(self, '_active_download_resp', None)
+                self._active_download_resp = None
+        else:
+            resp = getattr(self, '_active_download_resp', None)
+            self._active_download_resp = None
+        if resp is not None:
+            try:
+                resp.close()
+            except Exception:
+                pass
+
     def _stop_update_worker(self):
         worker = getattr(self, '_update_worker', None)
         if worker is None:
@@ -1917,7 +1964,9 @@ class Nova(QMainWindow):
         try:
             worker.requestInterruption()
             if worker.isRunning():
-                worker.wait(350)
+                worker.wait(500)
+            if worker.isRunning():
+                self._retire_running_worker(worker)
         except Exception:
             pass
 
@@ -2005,10 +2054,12 @@ class Nova(QMainWindow):
                     res,
                     on_progress=lambda done, tot, pct: self.progress.emit(done, tot, pct) if not cancel_evt.is_set() else None,
                     is_cancelled=lambda: cancel_evt.is_set() or self.isInterruptionRequested(),
+                    on_response_open=self_host._set_active_download_resp,
                 )
                 if not self.isInterruptionRequested():
                     self.completed.emit(dl)
 
+        self_host = self
         worker = _DownloadWorker()
         self._download_worker = worker
         worker.progress.connect(self._on_download_progress)
@@ -2028,12 +2079,14 @@ class Nova(QMainWindow):
         evt = getattr(self, '_download_cancel_evt', None)
         if evt is not None:
             evt.set()
+        self._close_active_download_resp()
         if hasattr(self, 'update_cancel_btn'):
             self.update_cancel_btn.setEnabled(False)
         self.update_status_lbl.setStyleSheet('color: #fbbf24;')
         self.update_status_lbl.setText('Cancelling download…')
 
     def _on_download_worker_finished(self, worker):
+        self._set_active_download_resp(None)
         if getattr(self, '_download_worker', None) is worker:
             self._download_worker = None
 
@@ -2041,6 +2094,7 @@ class Nova(QMainWindow):
         evt = getattr(self, '_download_cancel_evt', None)
         if evt is not None:
             evt.set()
+        self._close_active_download_resp()
         worker = getattr(self, '_download_worker', None)
         if worker is None:
             return
@@ -2056,13 +2110,20 @@ class Nova(QMainWindow):
         try:
             worker.requestInterruption()
             if worker.isRunning():
-                worker.wait(350)
+                worker.wait(500)
+            if worker.isRunning():
+                self._retire_running_worker(worker)
         except Exception:
             pass
 
     def _apply_download_result(self, dl: DownloadResult):
         self.update_check_btn.setEnabled(True)
         self.update_cancel_btn.setVisible(False)
+        can_retry = bool(
+            self._latest_update_result
+            and self._latest_update_result.has_downloadable_installer
+            and self._latest_update_result.asset_sha256
+        )
         if dl.status == 'verified' and dl.verified:
             self._verified_download = dl
             self.update_progress_bar.setValue(100)
@@ -2076,14 +2137,16 @@ class Nova(QMainWindow):
             self.update_status_lbl.setStyleSheet('color: #fbbf24;')
             self.update_status_lbl.setText('Download cancelled. Click Download Update to retry anytime.')
             self.update_install_btn.setEnabled(False)
-            self.update_download_btn.setEnabled(bool(self._latest_update_result and self._latest_update_result.has_downloadable_installer))
+            self.update_download_btn.setEnabled(can_retry)
         else:
             self._verified_download = None
             self.update_progress_bar.setVisible(False)
             self.update_status_lbl.setStyleSheet('color: #fda4af;')
             self.update_status_lbl.setText(dl.message or 'Download failed. You can retry or use Open Releases Page.')
             self.update_install_btn.setEnabled(False)
-            self.update_download_btn.setEnabled(bool(self._latest_update_result and self._latest_update_result.has_downloadable_installer and self._latest_update_result.asset_sha256))
+            self.update_download_btn.setEnabled(can_retry)
+            if can_retry:
+                self.update_download_btn.setText('↻  Retry Download')
 
     def _ui_install_downloaded_update(self):
         dl = getattr(self, '_verified_download', None)
@@ -2110,9 +2173,21 @@ class Nova(QMainWindow):
         self.update_status_lbl.setText('Launching verified Windows installer and closing Glass Nova…')
         ok, msg = launch_verified_installer(dl)
         if not ok:
+            self._verified_download = None
+            self.update_check_btn.setEnabled(True)
+            self.update_install_btn.setEnabled(False)
+            can_retry = bool(
+                getattr(self, '_latest_update_result', None)
+                and self._latest_update_result.has_downloadable_installer
+                and self._latest_update_result.asset_sha256
+            )
+            if hasattr(self, 'update_download_btn'):
+                self.update_download_btn.setEnabled(can_retry)
+                if can_retry:
+                    self.update_download_btn.setText('↻  Retry Download')
             self.update_status_lbl.setStyleSheet('color: #fda4af;')
-            self.update_status_lbl.setText(msg)
-            QMessageBox.warning(self, 'Update Launch Failed', f'{msg}\n\nYou can also install manually via Open Releases Page.')
+            self.update_status_lbl.setText(f'Launch failed: {msg}')
+            QMessageBox.warning(self, 'Update Launch Failed', f'{msg}\n\nClick Retry Download or use Open Releases Page to install manually.')
             return
 
         self.append_log(f'[Updater] {msg}')

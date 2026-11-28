@@ -19,6 +19,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from typing import Any, Callable, Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -203,12 +204,37 @@ def _normalize_sha256_digest(raw: Any) -> str:
     return text.upper() if _SHA256_HEX_RE.match(text) else ""
 
 
-def _extract_body_sha256(body: str) -> str:
-    """Extract an optional SHA-256 digest published in release notes text."""
-    if not isinstance(body, str):
+_ANY_SHA256_TOKEN_RE = re.compile(r"\b([0-9a-fA-F]{64})\b")
+_OTHER_ASSET_HINT_RE = re.compile(r"\b[\w.-]+\.(?:exe|zip|msi|tar\.gz|7z|dmg|deb|rpm)\b", re.IGNORECASE)
+
+
+def _extract_body_sha256(body: str, asset_name: str = "") -> str:
+    """Extract an optional SHA-256 digest from release notes without picking another asset's checksum."""
+    if not isinstance(body, str) or not body.strip():
         return ""
-    m = _BODY_SHA256_RE.search(body)
-    return m.group(1).upper() if m else ""
+
+    target_low = asset_name.strip().lower() if isinstance(asset_name, str) else ""
+    if target_low:
+        for line in body.splitlines():
+            if target_low in line.lower():
+                m_line = _ANY_SHA256_TOKEN_RE.search(line)
+                if m_line:
+                    return m_line.group(1).upper()
+
+    # Fallback: accept an explicit SHA-256: line only when unambiguous and not bound to another filename.
+    candidates: list[str] = []
+    for line in body.splitlines():
+        m = _BODY_SHA256_RE.search(line)
+        if not m:
+            continue
+        if target_low:
+            mentioned_files = [fn.lower() for fn in _OTHER_ASSET_HINT_RE.findall(line)]
+            if mentioned_files and target_low not in mentioned_files:
+                continue
+        candidates.append(m.group(1).upper())
+
+    unique = list(dict.fromkeys(candidates))
+    return unique[0] if len(unique) == 1 else ""
 
 
 def _select_installer_asset(payload: dict[str, Any], notes: str) -> tuple[str, int, str, str]:
@@ -229,7 +255,7 @@ def _select_installer_asset(payload: dict[str, Any], notes: str) -> tuple[str, i
             size = max(0, int(item.get("size") or 0))
         except (TypeError, ValueError):
             size = 0
-        digest = _normalize_sha256_digest(item.get("digest")) or _extract_body_sha256(notes)
+        digest = _normalize_sha256_digest(item.get("digest")) or _extract_body_sha256(notes, asset_name=name)
         return name, size, dl_url, digest
     return "", 0, "", ""
 
@@ -484,7 +510,9 @@ def download_update_installer(
     on_progress: Optional[Callable[[int, int, int], None]] = None,
     is_cancelled: Optional[Callable[[], bool]] = None,
     opener: Optional[Any] = None,
-    timeout: float = 20.0,
+    timeout: float = 5.0,
+    on_response_open: Optional[Callable[[Any], None]] = None,
+    progress_min_interval: float = 0.1,
 ) -> DownloadResult:
     """Download and verify the official Glass Nova installer into a temporary folder.
 
@@ -531,49 +559,85 @@ def download_update_installer(
     )
 
     downloaded = 0
+    total = expected_size
+    last_emit_pct = -1
+    last_emit_ts = 0.0
+    last_emit_bytes = -1
     try:
         with url_opener.open(req, timeout=timeout) as resp:
-            hdr_len = 0
+            if on_response_open is not None:
+                try:
+                    on_response_open(resp)
+                except Exception:
+                    pass
             try:
-                hdr_len = int(resp.headers.get("Content-Length") or 0) if getattr(resp, "headers", None) else 0
-            except (TypeError, ValueError):
                 hdr_len = 0
-            total = expected_size or hdr_len
+                try:
+                    hdr_len = int(resp.headers.get("Content-Length") or 0) if getattr(resp, "headers", None) else 0
+                except (TypeError, ValueError):
+                    hdr_len = 0
+                total = expected_size or hdr_len
 
-            if total > _MAX_INSTALLER_BYTES:
-                return DownloadResult(status="error", message="Installer size exceeds safety limit.")
+                if hdr_len > _MAX_INSTALLER_BYTES or total > _MAX_INSTALLER_BYTES:
+                    return DownloadResult(status="error", message="Installer size exceeds safety limit.")
 
-            with part_path.open("wb") as out_f:
-                while True:
-                    if is_cancelled and is_cancelled():
-                        out_f.close()
-                        _remove_part()
-                        return DownloadResult(status="cancelled", message="Download cancelled by user.")
-                    chunk = resp.read(65536)
-                    if not chunk:
-                        break
-                    downloaded += len(chunk)
-                    if downloaded > _MAX_INSTALLER_BYTES:
-                        out_f.close()
-                        _remove_part()
-                        return DownloadResult(status="error", message="Download exceeded maximum safe size.")
-                    out_f.write(chunk)
-                    if on_progress:
-                        pct = int(min(100, (downloaded * 100) / total)) if total > 0 else 0
-                        on_progress(downloaded, total, pct)
+                with part_path.open("wb") as out_f:
+                    while True:
+                        if is_cancelled and is_cancelled():
+                            out_f.close()
+                            _remove_part()
+                            return DownloadResult(status="cancelled", message="Download cancelled by user.")
+                        chunk = resp.read(65536)
+                        if not chunk:
+                            break
+                        downloaded += len(chunk)
+                        if downloaded > _MAX_INSTALLER_BYTES:
+                            out_f.close()
+                            _remove_part()
+                            return DownloadResult(status="error", message="Download exceeded maximum safe size.")
+                        out_f.write(chunk)
+                        if on_progress:
+                            pct = int(min(100, (downloaded * 100) / total)) if total > 0 else 0
+                            now = time.monotonic()
+                            if (
+                                pct != last_emit_pct
+                                or (now - last_emit_ts) >= progress_min_interval
+                                or (total > 0 and downloaded >= total)
+                            ):
+                                last_emit_pct = pct
+                                last_emit_ts = now
+                                last_emit_bytes = downloaded
+                                on_progress(downloaded, total, pct)
+            finally:
+                if on_response_open is not None:
+                    try:
+                        on_response_open(None)
+                    except Exception:
+                        pass
     except HTTPError as exc:
         _remove_part()
+        if is_cancelled and is_cancelled():
+            return DownloadResult(status="cancelled", message="Download cancelled by user.")
         return DownloadResult(status="error", message=f"Download failed (HTTP {exc.code}).")
-    except (URLError, TimeoutError, OSError) as exc:
+    except (URLError, TimeoutError, OSError, ValueError) as exc:
         _remove_part()
+        if is_cancelled and is_cancelled():
+            return DownloadResult(status="cancelled", message="Download cancelled by user.")
         return DownloadResult(status="error", message=f"Download interrupted: {exc}")
     except Exception as exc:
         _remove_part()
+        if is_cancelled and is_cancelled():
+            return DownloadResult(status="cancelled", message="Download cancelled by user.")
         return DownloadResult(status="error", message=f"Unexpected download error: {exc}")
 
     if is_cancelled and is_cancelled():
         _remove_part()
         return DownloadResult(status="cancelled", message="Download cancelled by user.")
+
+    if on_progress and downloaded > 0 and last_emit_bytes != downloaded:
+        final_total = total if total > 0 else downloaded
+        final_pct = int(min(100, (downloaded * 100) / final_total)) if final_total > 0 else 100
+        on_progress(downloaded, final_total, final_pct)
 
     ok, actual_sha, reason = verify_installer_file(
         part_path,
@@ -619,8 +683,11 @@ def build_installer_launch_args(
     allowed_dir: Optional[Path] = None,
 ) -> list[str]:
     """Build safe, interactive (non-silent) Inno Setup launch arguments for a verified temp installer."""
-    p = Path(installer_path).resolve()
+    raw_path = Path(installer_path)
+    if raw_path.is_symlink() or raw_path.parent.is_symlink():
+        raise ValueError("Refusing to launch symlinked installer path.")
     base_dir = Path(allowed_dir).resolve() if allowed_dir else get_update_temp_dir()
+    p = raw_path.resolve()
     if p.parent != base_dir:
         raise ValueError("Installer path must reside inside Glass Nova's temporary update directory.")
     if not _INSTALLER_NAME_RE.match(p.name):
@@ -646,7 +713,7 @@ def launch_verified_installer(
     allowed_dir: Optional[Path] = None,
     popen_fn: Optional[Callable[..., Any]] = None,
 ) -> tuple[bool, str]:
-    """Re-verify SHA-256 on disk and launch the interactive installer with shell=False.
+    """Validate path confinement, re-verify SHA-256 on disk, and launch the interactive installer with shell=False.
 
     Never executes unverified files; never silently installs or elevates.
     """
@@ -654,14 +721,6 @@ def launch_verified_installer(
         return False, "Refusing to launch: installer has not passed integrity verification."
     if not download_result.file_path or not download_result.sha256:
         return False, "Refusing to launch: missing verified installer path or SHA-256 digest."
-
-    ok, _sha, reason = verify_installer_file(
-        download_result.file_path,
-        expected_sha256=download_result.sha256,
-        expected_size=download_result.size_bytes,
-    )
-    if not ok:
-        return False, f"Pre-launch verification failed: {reason}"
 
     target_install_dir = install_dir if install_dir is not None else detect_installed_app_dir()
     try:
@@ -672,6 +731,14 @@ def launch_verified_installer(
         )
     except Exception as exc:
         return False, f"Invalid installer launch configuration: {exc}"
+
+    ok, _sha, reason = verify_installer_file(
+        args[0],
+        expected_sha256=download_result.sha256,
+        expected_size=download_result.size_bytes,
+    )
+    if not ok:
+        return False, f"Pre-launch verification failed: {reason}"
 
     launcher = popen_fn or subprocess.Popen
     kwargs: dict[str, Any] = {"shell": False}
