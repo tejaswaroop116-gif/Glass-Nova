@@ -57,7 +57,7 @@
 
 ### Safety, Guidance & Companions
 - **Guided Walkthroughs**: Step-by-step interactive guidance (`Next`, `Back`, `Pause`, `Stop`) with non-intrusive visual highlights around UI elements.
-- **Reusable Semantic Workflows**: Records only allow-listed semantic actions (never raw keystrokes, passwords, API keys, or clipboard secrets), with a structured step editor and per-step user confirmation on replay.
+- **Reusable Semantic Workflows, Templates & Visual Debugger**: Records only allow-listed semantic actions (never raw keystrokes, passwords, API keys, or clipboard secrets), includes **6 curated workflow templates**, a **Visual Workflow Debugger** (non-destructive dry-run simulation, breakpoints, schema/permission preflight validation), and per-step user confirmation on live replay.
 - **Webcam Hand-Gesture Mouse Control**: Move the cursor, click, drag, and scroll using hand landmarks (`hand_gesture.py`).
 - **4 Animated Desktop Companions**: `Original NOVA Robot`, `Ghost`, `NOVA Painter Pet`, and `Cloudy` (toggle anytime with `Ctrl+Shift+N`).
 
@@ -178,7 +178,7 @@ Glass Nova is designed around **fail-closed permission enforcement**:
 
 ## Testing
 
-Glass Nova includes 7 automated test suites verified on every push via GitHub Actions (`.github/workflows/tests.yml`):
+Glass Nova includes 9 automated test suites verified on every push via GitHub Actions (`.github/workflows/tests.yml`):
 
 ```powershell
 # Syntax check across all Python modules
@@ -187,8 +187,10 @@ Glass Nova includes 7 automated test suites verified on every push via GitHub Ac
 # Run automated test suites
 .venv\Scripts\python.exe -B test_security_audit.py -v
 .venv\Scripts\python.exe -B test_offline_capability.py -v
+.venv\Scripts\python.exe -B test_lifecycle_and_voice_controls.py -v
 .venv\Scripts\python.exe -B test_website.py -v
 .venv\Scripts\python.exe -B test_nus_feature_pack.py -v
+.venv\Scripts\python.exe -B test_workflows_milestone.py -v
 .venv\Scripts\python.exe -B test_screen_interaction.py -v
 .venv\Scripts\python.exe -B test_upgrade_integration.py
 .venv\Scripts\python.exe -B test_pipeline_e2e.py
@@ -232,8 +234,8 @@ No. Glass Nova is built specifically for Windows 10/11 and relies on native Win3
 
 - [x] Beginner-friendly Windows `v1.0.0-beta` Source + One-Click Launcher ZIP on GitHub Releases.
 - [x] Optional local LLM backend (Ollama) + graphical Settings pickers + Windows DPAPI local encryption.
+- [x] Expanded multi-step workflow templates (6 curated allow-listed templates) and Visual Workflow Debugger (dry-run simulation, breakpoints & preflight checks).
 - [ ] Signed Windows `.exe` installer / auto-updater.
-- [ ] Expanded multi-step workflow templates and visual workflow debugging.
 
 ---
 

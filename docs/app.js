@@ -194,14 +194,14 @@
       ref: 'nova_local_knowledge.py · nova_offline_agent.py · nova_offline_ai.py'
     },
     workflows: {
-      title: 'Guided Walkthroughs & Semantic Workflows',
-      desc: 'Generate step-by-step on-screen guided walkthroughs (with offline Ollama fallback) and save reusable semantic workflows for recurring desktop sequences.',
+      title: 'Guided Walkthroughs, Workflow Templates & Visual Debugger',
+      desc: 'Generate step-by-step on-screen guided walkthroughs (with offline Ollama fallback), install 6 curated allow-listed workflow templates, and inspect/dry-run workflows with breakpoints and schema/permission preflight checks before live replay.',
       pills: [
-        { cls: 'pill-cyan', text: 'Step-by-Step Guidance' },
-        { cls: 'pill-emerald', text: 'Offline Ollama Fallback' },
-        { cls: 'pill-violet', text: 'Reusable Workflows' }
+        { cls: 'pill-cyan', text: '6 Curated Templates' },
+        { cls: 'pill-emerald', text: 'Visual Dry-Run Debugger' },
+        { cls: 'pill-violet', text: 'DPAPI Encrypted Workflows' }
       ],
-      ref: 'walkthrough_engine.py · workflow_engine.py'
+      ref: 'nova_walkthrough.py · nova_workflows.py · ui_dialogs.py'
     },
     gestures: {
       title: 'Hand-Gesture Mouse & Clean Lifecycle',

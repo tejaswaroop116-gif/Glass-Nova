@@ -345,11 +345,11 @@ if (!journey || !sticky || !container) {
     [
       { tag: 'DONE', cls: 'done', text: 'Verified Windows UIAutomation, Playwright & YouTube controls' },
       { tag: 'DONE', cls: 'done', text: 'Guided walkthroughs & reusable semantic workflow replay' },
-      { tag: 'PLANNED', cls: 'planned', text: 'Expanded workflow templates & visual workflow debugging' }
+      { tag: 'DONE', cls: 'done', text: '6 curated workflow templates & visual dry-run workflow debugger' }
     ],
     [
       { tag: 'PLANNED', cls: 'planned', text: 'Signed Windows .exe installer & seamless auto-updater' },
-      { tag: 'PLANNED', cls: 'planned', text: 'Expanded plugin/skill ecosystem & workflow templates' },
+      { tag: 'PLANNED', cls: 'planned', text: 'Expanded plugin & skill ecosystem' },
       { tag: 'PLANNED', cls: 'planned', text: 'Adaptive long-term personalization (future vision)' }
     ]
   ];
