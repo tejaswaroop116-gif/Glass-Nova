@@ -1798,7 +1798,15 @@ class Nova(QMainWindow):
             return
         dlg = WorkflowDebuggerDialog(wf, WorkflowDebugger, self)
         if dlg.exec() == QDialog.Accepted and dlg.request_live_replay:
-            if self.ensure_backend():
+            steps = wf.get('steps') or []
+            step_lines = '\n'.join(f"  {i}. {s.get('action')} — {s.get('description', '')}" for i, s in enumerate(steps, 1))
+            ans = QMessageBox.question(
+                self,
+                'Confirm Workflow Replay',
+                f"Workflow: {wf.get('name')}\n\nSteps to replay:\n{step_lines or '  (no steps)'}\n\nEach step will also ask for your confirmation before executing. Start replay?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if ans == QMessageBox.Yes and self.ensure_backend():
                 self.send_cmd(cmd='workflow_cmd', action='replay', workflow_id=wf.get('workflow_id'))
 
     def _on_workflow_step_request(self, ev: dict):

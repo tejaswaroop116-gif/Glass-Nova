@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from bot import cl, lgrad, st
+from nova_workflows import Workflow, WorkflowStep
 from permissions import CATEGORIES
 
 
@@ -778,9 +779,10 @@ class WorkflowDebuggerDialog(QDialog):
         self._breakpoints: set[int] = set()
         self._traces_by_step: dict[int, dict] = {}
         self._next_step = 1
+        self._paused_at_breakpoint = False
+        self._has_blocked_steps = False
         self.request_live_replay = False
 
-        from nova_workflows import Workflow, WorkflowStep
         steps = [
             WorkflowStep(
                 action=str(s.get("action", "")),
@@ -835,6 +837,10 @@ class WorkflowDebuggerDialog(QDialog):
         hdr.setStyleSheet("font-size: 13pt; font-weight: 700; color: #a5f1ff;")
         pl.addWidget(hdr)
 
+        self.summary_label = QLabel("")
+        self.summary_label.setStyleSheet("color: #9be7c4; font-size: 9.2pt; font-weight: 600;")
+        pl.addWidget(self.summary_label)
+
         self.status_banner = QLabel("Ready for non-destructive Dry-Run simulation. Toggle breakpoints on any step.")
         self.status_banner.setStyleSheet("color: #b4d8ea; font-size: 9.5pt;")
         pl.addWidget(self.status_banner)
@@ -867,11 +873,11 @@ class WorkflowDebuggerDialog(QDialog):
 
         bottom = QHBoxLayout()
         bottom.setSpacing(10)
-        live_btn = QPushButton("▶  Replay Live (Per-Step Confirm)")
-        live_btn.setCursor(Qt.PointingHandCursor)
-        live_btn.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 rgba(32,169,232,225), stop:1 rgba(23,85,165,232)); border: 1px solid #a0efff; font-weight: 700; border-radius: 12px; padding: 10px 14px;")
-        live_btn.clicked.connect(self._on_replay_live)
-        bottom.addWidget(live_btn)
+        self.live_btn = QPushButton("▶  Replay Live (Per-Step Confirm)")
+        self.live_btn.setCursor(Qt.PointingHandCursor)
+        self.live_btn.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 rgba(32,169,232,225), stop:1 rgba(23,85,165,232)); border: 1px solid #a0efff; font-weight: 700; border-radius: 12px; padding: 10px 14px;")
+        self.live_btn.clicked.connect(self._on_replay_live)
+        bottom.addWidget(self.live_btn)
 
         close_btn = QPushButton("Close")
         close_btn.setCursor(Qt.PointingHandCursor)
@@ -880,8 +886,24 @@ class WorkflowDebuggerDialog(QDialog):
         pl.addLayout(bottom)
 
         layout.addWidget(panel)
-        self.resize(700, 460)
+        self.resize(700, 480)
+        self._update_preflight_summary()
         self._refresh_steps()
+
+    def _update_preflight_summary(self):
+        preflight = self._debugger_cls.preflight_validate(self._workflow)
+        n_verified = sum(1 for t in preflight if t.status == "verified")
+        n_warn = sum(1 for t in preflight if t.status == "warning")
+        n_blocked = sum(1 for t in preflight if t.status == "blocked")
+        self._has_blocked_steps = n_blocked > 0
+        self.summary_label.setText(
+            f"Preflight: ✓ {n_verified} Verified  ·  ⚠ {n_warn} Warnings  ·  ✕ {n_blocked} Blocked"
+        )
+        self.live_btn.setEnabled(not self._has_blocked_steps and len(self._workflow.steps) > 0)
+        if self._has_blocked_steps:
+            self.live_btn.setToolTip("Replay Live is disabled while preflight detects blocked steps.")
+        else:
+            self.live_btn.setToolTip("Replay workflow live with per-step approval and permission gates.")
 
     def _refresh_steps(self, select_row: int = 0):
         self.step_list.clear()
@@ -934,34 +956,53 @@ class WorkflowDebuggerDialog(QDialog):
             self._workflow,
             breakpoints=self._breakpoints,
             start_step=self._next_step,
+            skip_breakpoint_on_start=self._paused_at_breakpoint,
         )
         for tr in res.get("traces") or []:
             self._traces_by_step[tr["step_index"]] = tr
         if res.get("paused"):
             self._next_step = int(res.get("next_step", 1))
+            self._paused_at_breakpoint = True
             self.status_banner.setText(f"Paused at breakpoint on step {self._next_step}. Click Dry-Run / Continue to resume.")
             self._refresh_steps(self._next_step - 1)
         elif not res.get("ok"):
-            blk = res.get("blocked_at", 1)
+            blk = int(res.get("blocked_at", 1))
+            self._next_step = blk
+            self._paused_at_breakpoint = False
             self.status_banner.setText(f"Blocked at step {blk} by fail-closed security check.")
             self._refresh_steps(blk - 1)
         else:
             self._next_step = 1
+            self._paused_at_breakpoint = False
             self.status_banner.setText(f"Dry-Run complete: all {len(self._workflow.steps)} steps validated cleanly.")
             self._refresh_steps(max(0, len(self._workflow.steps) - 1))
 
     def _step_next(self):
+        if not self._workflow.steps:
+            return
         if self._next_step > len(self._workflow.steps):
             self._next_step = 1
             self._traces_by_step.clear()
         temp_bp = set(self._breakpoints)
         if self._next_step < len(self._workflow.steps):
             temp_bp.add(self._next_step + 1)
-        res = self._debugger_cls.dry_run(self._workflow, breakpoints=temp_bp, start_step=self._next_step)
+        res = self._debugger_cls.dry_run(
+            self._workflow,
+            breakpoints=temp_bp,
+            start_step=self._next_step,
+            skip_breakpoint_on_start=True,
+        )
         for tr in res.get("traces") or []:
             if tr["status"] != "paused_breakpoint":
                 self._traces_by_step[tr["step_index"]] = tr
         cur = self._next_step
+        self._paused_at_breakpoint = False
+        if not res.get("ok"):
+            blk = int(res.get("blocked_at", cur))
+            self._next_step = blk
+            self.status_banner.setText(f"Halted: step {blk} blocked by fail-closed security check.")
+            self._refresh_steps(blk - 1)
+            return
         self._next_step = min(len(self._workflow.steps) + 1, self._next_step + 1)
         self.status_banner.setText(f"Stepped through step {cur} of {len(self._workflow.steps)}.")
         self._refresh_steps(cur - 1)
@@ -969,9 +1010,15 @@ class WorkflowDebuggerDialog(QDialog):
     def _reset_debug(self):
         self._traces_by_step.clear()
         self._next_step = 1
+        self._paused_at_breakpoint = False
         self.status_banner.setText("Debugger reset. Ready for Dry-Run simulation.")
         self._refresh_steps(0)
 
     def _on_replay_live(self):
+        self._update_preflight_summary()
+        if self._has_blocked_steps:
+            self.request_live_replay = False
+            self.status_banner.setText("Replay Live blocked: fix or remove blocked steps before running live.")
+            return
         self.request_live_replay = True
         self.accept()

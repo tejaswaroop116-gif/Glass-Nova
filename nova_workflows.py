@@ -244,38 +244,12 @@ class WorkflowPlayer:
 # EXPANDED MULTI-STEP WORKFLOW TEMPLATES & VISUAL WORKFLOW DEBUGGER (DRY-RUN)
 # =============================================================================
 
+from nova_action_router import ACTION_SCHEMAS, validate_proposed_action
+
+# Derived directly from authoritative nova_action_router.ACTION_SCHEMAS (single source of truth)
 ACTION_PERMISSION_MAP: dict[str, Optional[str]] = {
-    "open_app": None,
-    "open_file": "file_read",
-    "open_url": "browser_action",
-    "search_web": "browser_action",
-    "play_youtube": "browser_action",
-    "open_folder": "file_read",
-    "system_status": None,
-    "volume_control": None,
-    "brightness_control": None,
-    "window_control": "mouse_keyboard",
-    "app_control": None,
-    "take_screenshot": "screen_view",
-    "write_in_notepad": "mouse_keyboard",
-    "click_ui_element": "mouse_keyboard",
-    "skip_youtube_ad": "browser_action",
-    "close_browser_tab": "browser_action",
-    "control_youtube_video": "browser_action",
-    "scroll_desktop": "mouse_keyboard",
-    "create_folder": "file_write",
-    "list_folder": "file_read",
-    "rename_file": "file_write",
-    "copy_file": "file_write",
-    "move_file": "file_write",
-    "delete_file": "file_delete",
-    "calculator_operation": None,
-    "write_text_file": "file_write",
-    "read_text_file": "file_read",
-    "look_at_screen": "screen_view",
-    "inspect_document": "file_read",
-    "inspect_video": "file_read",
-    "mic_sensitivity_control": None,
+    act: ACTION_SCHEMAS.get(act, {}).get("permission")
+    for act in sorted(ALLOWLISTED_WORKFLOW_ACTIONS)
 }
 
 
@@ -296,8 +270,8 @@ WORKFLOW_TEMPLATES: tuple[WorkflowTemplate, ...] = (
         summary="Check PC health, set comfortable volume, open Notepad for daily priorities, and launch your workspace.",
         steps=(
             {"action": "system_status", "arguments": {}, "description": "Check CPU, RAM, battery, and disk health"},
-            {"action": "volume_control", "arguments": {"level": 40}, "description": "Set system volume to 40%"},
-            {"action": "open_app", "arguments": {"app_name": "notepad"}, "description": "Open Notepad for daily tasks"},
+            {"action": "volume_control", "arguments": {"action": "set", "value": 40}, "description": "Set system volume to 40%"},
+            {"action": "open_app", "arguments": {"app": "notepad"}, "description": "Open Notepad for daily tasks"},
             {"action": "open_url", "arguments": {"url": "https://calendar.google.com"}, "description": "Open calendar in browser"},
         ),
     ),
@@ -308,8 +282,8 @@ WORKFLOW_TEMPLATES: tuple[WorkflowTemplate, ...] = (
         summary="Lower audio distractions, tune display brightness, calibrate microphone sensitivity, and report system status.",
         steps=(
             {"action": "volume_control", "arguments": {"action": "mute"}, "description": "Mute system audio for focus"},
-            {"action": "brightness_control", "arguments": {"level": 65}, "description": "Set screen brightness to comfortable 65%"},
-            {"action": "mic_sensitivity_control", "arguments": {"mode": "auto"}, "description": "Enable AUTO NEAREST mic noise gate"},
+            {"action": "brightness_control", "arguments": {"action": "set", "value": 65}, "description": "Set screen brightness to comfortable 65%"},
+            {"action": "mic_sensitivity_control", "arguments": {"action": "auto_nearest"}, "description": "Enable AUTO NEAREST mic noise gate"},
             {"action": "system_status", "arguments": {}, "description": "Confirm clean background system load"},
         ),
     ),
@@ -320,8 +294,8 @@ WORKFLOW_TEMPLATES: tuple[WorkflowTemplate, ...] = (
         summary="Capture the current slide or lecture window, inspect visible content, and open Notepad for structured notes.",
         steps=(
             {"action": "take_screenshot", "arguments": {}, "description": "Capture current lecture slide screenshot"},
-            {"action": "look_at_screen", "arguments": {"question": "Summarize the key points visible on this slide."}, "description": "Analyze visible lecture content"},
-            {"action": "open_app", "arguments": {"app_name": "notepad"}, "description": "Open Notepad for study notes"},
+            {"action": "look_at_screen", "arguments": {"query": "Summarize the key points visible on this slide."}, "description": "Analyze visible lecture content"},
+            {"action": "open_app", "arguments": {"app": "notepad"}, "description": "Open Notepad for study notes"},
         ),
     ),
     WorkflowTemplate(
@@ -342,7 +316,7 @@ WORKFLOW_TEMPLATES: tuple[WorkflowTemplate, ...] = (
         summary="Search the web for a topic and open Notepad ready to collect notes.",
         steps=(
             {"action": "search_web", "arguments": {"query": "Python PySide6 latest release notes"}, "description": "Search the web for your research topic"},
-            {"action": "open_app", "arguments": {"app_name": "notepad"}, "description": "Open Notepad to draft research notes"},
+            {"action": "open_app", "arguments": {"app": "notepad"}, "description": "Open Notepad to draft research notes"},
         ),
     ),
     WorkflowTemplate(
@@ -351,7 +325,7 @@ WORKFLOW_TEMPLATES: tuple[WorkflowTemplate, ...] = (
         category="Media",
         summary="Set listening volume and launch ambient music on YouTube.",
         steps=(
-            {"action": "volume_control", "arguments": {"level": 50}, "description": "Set comfortable listening volume (50%)"},
+            {"action": "volume_control", "arguments": {"action": "set", "value": 50}, "description": "Set comfortable listening volume (50%)"},
             {"action": "play_youtube", "arguments": {"query": "lofi hip hop radio beats to relax study to"}, "description": "Play ambient study music on YouTube"},
         ),
     ),
@@ -385,6 +359,9 @@ def instantiate_template(template_id: str, custom_name: Optional[str] = None) ->
     if match is None:
         raise ValueError(f"Unknown workflow template '{tid}'.")
 
+    if custom_name and _contains_sensitive_data({}, str(custom_name)):
+        raise ValueError("Custom workflow name appears to contain sensitive data and was rejected.")
+
     now = time.time()
     steps: list[WorkflowStep] = []
     for raw in match.steps:
@@ -395,6 +372,9 @@ def instantiate_template(template_id: str, custom_name: Optional[str] = None) ->
             raise ValueError(f"Template '{tid}' contains disallowed action '{act}'.")
         if _contains_sensitive_data(args, desc):
             raise ValueError(f"Template '{tid}' step '{act}' contains sensitive data.")
+        ok_schema, reason = validate_proposed_action({"action": act, "arguments": args})
+        if not ok_schema:
+            raise ValueError(f"Template '{tid}' step '{act}' failed schema validation: {reason}")
         steps.append(WorkflowStep(action=act, arguments=args, description=desc, created_at=now))
 
     final_name = (custom_name or match.name).strip()[:100] or match.name
@@ -424,7 +404,7 @@ class WorkflowDebugger:
 
     @staticmethod
     def preflight_validate(workflow: Workflow) -> list[WorkflowDebugTrace]:
-        """Validate every step against allow-list, secret hygiene, and permission requirements."""
+        """Validate every step against allow-list, secret hygiene, ACTION_SCHEMAS, and dangerous patterns."""
         traces: list[WorkflowDebugTrace] = []
         for idx, step in enumerate(workflow.steps, start=1):
             t0 = time.perf_counter()
@@ -439,13 +419,18 @@ class WorkflowDebugger:
             elif _contains_sensitive_data(args, desc):
                 status = "blocked"
                 msg = "Step appears to contain sensitive credentials/secrets and is blocked."
-            elif perm in ("file_delete", "form_purchase", "continuous_screen"):
-                status = "warning"
-                msg = f"High-impact step: requires explicit UI button click for '{perm}'."
             else:
-                perm_note = f"Requires '{perm}' permission" if perm else "No privileged permission required"
-                status = "verified"
-                msg = f"Preflight OK · {perm_note}."
+                ok_schema, reason = validate_proposed_action({"action": act, "arguments": args})
+                if not ok_schema:
+                    status = "blocked"
+                    msg = f"Schema / safety validation failed: {reason}"
+                elif perm in ("file_delete", "form_purchase", "continuous_screen"):
+                    status = "warning"
+                    msg = f"High-impact step: requires explicit UI button click for '{perm}'."
+                else:
+                    perm_note = f"Requires '{perm}' permission" if perm else "No privileged permission required"
+                    status = "verified"
+                    msg = f"Preflight OK · {perm_note}."
 
             dt_ms = round((time.perf_counter() - t0) * 1000.0, 3)
             traces.append(
@@ -468,12 +453,14 @@ class WorkflowDebugger:
         workflow: Workflow,
         breakpoints: Optional[set[int]] = None,
         start_step: int = 1,
+        skip_breakpoint_on_start: bool = False,
         on_trace: Optional[Callable[[WorkflowDebugTrace], None]] = None,
     ) -> dict[str, Any]:
         """Simulate workflow execution without invoking real OS actions.
 
-        Pauses cleanly if a 1-based step index is in `breakpoints` (after `start_step`),
-        or stops if a step is `blocked` by allow-list / secret hygiene checks.
+        Pauses cleanly at any 1-based step index in `breakpoints` (including Step 1 unless
+        `skip_breakpoint_on_start=True` is passed when resuming from a paused breakpoint),
+        or halts immediately if a step is `blocked`.
         """
         bp = set(breakpoints or ())
         preflight = cls.preflight_validate(workflow)
@@ -482,7 +469,8 @@ class WorkflowDebugger:
         for item in preflight:
             if item.step_index < start_step:
                 continue
-            if item.step_index in bp and item.step_index > start_step:
+            should_pause = item.step_index in bp and not (skip_breakpoint_on_start and item.step_index == start_step)
+            if should_pause:
                 paused = WorkflowDebugTrace(
                     step_index=item.step_index,
                     action=item.action,
