@@ -107,7 +107,7 @@
       .js .reveal:not(.is-visible) { opacity: 1; transform: none; }
     }
   </style>
-  <link rel="stylesheet" href="styles.css?v=6">
+  <link rel="stylesheet" href="styles.css?v=7">
   <script>document.documentElement.classList.add('js');</script>
 </head>
 <body>
@@ -168,6 +168,7 @@
 
       <nav aria-label="Primary navigation">
         <ul class="nav-links" id="primary-nav">
+          <li><a href="#nova-journey">3D Journey</a></li>
           <li><a href="#intro">About</a></li>
           <li><a href="#modes">Modes</a></li>
           <li><a href="#capabilities">Capabilities</a></li>
@@ -263,6 +264,52 @@
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================
+         CINEMATIC 3D FLIGHT — 4-ACT SCROLL-DRIVEN CORE JOURNEY
+         (Full-viewport sticky 3D stage inspired by Codrops)
+         ======================================================= -->
+    <section class="nova-journey" id="nova-journey" aria-label="Glass Nova Cinematic 3D Flight">
+      <div class="nj-sticky">
+        <div class="nj-hud-top">
+          <span class="nj-badge">3D FLIGHT · SCROLL TO TRAVEL</span>
+          <a class="nj-skip" href="#intro">Skip 3D Flight &darr;</a>
+        </div>
+
+        <div class="nj-stage">
+          <article class="nj-act nj-pos-center" data-nj-act="0">
+            <span class="nj-kicker">ACT 01 · APPROACH</span>
+            <h2 class="nj-title">ENTER THE<br><span>NOVA CORE</span></h2>
+            <p class="nj-sub">A frameless PySide6 glass intelligence engineered natively for Windows 10 &amp; 11.</p>
+          </article>
+
+          <article class="nj-act nj-pos-left" data-nj-act="1">
+            <span class="nj-kicker">ACT 02 · CORE DIVE</span>
+            <h2 class="nj-title">DUAL<br><span>AUTONOMY</span></h2>
+            <p class="nj-sub">Fly seamlessly between live Gemini cloud voice and 0 ms offline local execution.</p>
+          </article>
+
+          <article class="nj-act nj-pos-right" data-nj-act="2">
+            <span class="nj-kicker">ACT 03 · THE VAULT</span>
+            <h2 class="nj-title">FAIL-CLOSED<br><span>TRUST</span></h2>
+            <p class="nj-sub">Nine explicit permission gates and DPAPI encryption. AI models never self-grant access.</p>
+          </article>
+
+          <article class="nj-act nj-pos-bottom" data-nj-act="3">
+            <span class="nj-kicker">ACT 04 · HORIZON</span>
+            <h2 class="nj-title">SENSES · ACTION<br><span>COMPANIONS</span></h2>
+            <p class="nj-sub">Screen understanding, verified automation, hand gestures, and 4 floating desktop companions.</p>
+          </article>
+        </div>
+
+        <div class="nj-rail" role="tablist" aria-label="3D Flight Acts">
+          <button type="button" class="nj-step is-active" data-nj-jump="0"><span>01</span> Approach</button>
+          <button type="button" class="nj-step" data-nj-jump="1"><span>02</span> Core Dive</button>
+          <button type="button" class="nj-step" data-nj-jump="2"><span>03</span> The Vault</button>
+          <button type="button" class="nj-step" data-nj-jump="3"><span>04</span> Horizon</button>
         </div>
       </div>
     </section>
@@ -813,9 +860,9 @@ ollama pull moondream</code></pre>
 
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js" defer></script>
-  <script type="module" src="scene.js?v=6"></script>
-  <script src="app.js?v=6" defer></script>
-  <script src="cinematic.js?v=6" defer></script>
-  <script type="module" src="spiral-roadmap.js?v=6"></script>
+  <script type="module" src="scene.js?v=7"></script>
+  <script src="app.js?v=7" defer></script>
+  <script src="cinematic.js?v=7" defer></script>
+  <script type="module" src="spiral-roadmap.js?v=7"></script>
 </body>
 </html>
